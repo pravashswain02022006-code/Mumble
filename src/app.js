@@ -91,7 +91,13 @@
   }
 
   function sortableValue(row, key) {
-    if (key === "date") return Date.parse(String(row.date).replace(/(\d+)(st|nd|rd|th)/, "$1"));
+    if (key === "date") {
+      const cleaned = String(row.date || "")
+        .replace(" at ", " ")
+        .replace(/(\d+)(st|nd|rd|th)/, "$1");
+      const parsed = Date.parse(cleaned);
+      return isNaN(parsed) ? 0 : parsed;
+    }
     return row[key];
   }
 
@@ -215,6 +221,7 @@
         key,
         direction: current.key === key && current.direction === "asc" ? "desc" : "asc",
       })),
+      setSortDirection: (direction) => setSort((current) => ({ ...current, direction })),
       page: safePage,
       setPage,
       pageSize,
@@ -534,7 +541,20 @@
     return h("section", null,
       h(Breadcrumb, { current: mode === "recent" ? "Recent Transaction" : "Transaction History" }),
       h("div", { className: "panel" },
-        h("div", { className: "panel-title" }, h("h2", null, title), h(LastUpdated, { table })),
+        h("div", { className: "panel-title" }, 
+          h("h2", null, title), 
+          h("div", { className: "panel-title-actions" },
+            mode === "recent" && h("select", {
+              className: "sort-select",
+              value: table.sort.direction,
+              onChange: (e) => table.setSortDirection(e.target.value)
+            },
+              h("option", { value: "desc" }, "Newest to Oldest"),
+              h("option", { value: "asc" }, "Oldest to Newest")
+            ),
+            h(LastUpdated, { table })
+          )
+        ),
         mode === "recent"
           ? h(SummaryStats, { type: "transaction", allTransactions, allSettlements })
           : h("div", { className: "stats history-stats" },
@@ -569,7 +589,20 @@
     return h("section", null,
       h(Breadcrumb, { current: mode === "recent" ? "Recent Settlement" : "Settlement History" }),
       h("div", { className: "panel" },
-        h("div", { className: "panel-title" }, h("h2", null, title), h(LastUpdated, { table })),
+        h("div", { className: "panel-title" }, 
+          h("h2", null, title), 
+          h("div", { className: "panel-title-actions" },
+            mode === "recent" && h("select", {
+              className: "sort-select",
+              value: table.sort.direction,
+              onChange: (e) => table.setSortDirection(e.target.value)
+            },
+              h("option", { value: "desc" }, "Newest to Oldest"),
+              h("option", { value: "asc" }, "Oldest to Newest")
+            ),
+            h(LastUpdated, { table })
+          )
+        ),
         mode === "recent"
           ? h(SummaryStats, { type: "settlement", allTransactions, allSettlements })
           : h("div", { className: cx("stats history-stats", "four") },
@@ -737,6 +770,22 @@
   function AdminPage({ data, setData, onLogout, dbError, onDismissError }) {
     const [saving, setSaving] = useState(false);
 
+    const sortedTransactions = useMemo(() => {
+      return (data.transactions || []).slice().sort((a, b) => {
+        const aVal = sortableValue(a, "date");
+        const bVal = sortableValue(b, "date");
+        return bVal - aVal;
+      });
+    }, [data.transactions]);
+
+    const sortedSettlements = useMemo(() => {
+      return (data.settlements || []).slice().sort((a, b) => {
+        const aVal = sortableValue(a, "date");
+        const bVal = sortableValue(b, "date");
+        return bVal - aVal;
+      });
+    }, [data.settlements]);
+
     async function saveRecord(kind, record, editingId) {
       const table = kind === "transactions" ? "transactions" : "settlements";
       const dbRecord = kind === "transactions" ? mapTxToDb(record) : mapStToDb(record);
@@ -785,13 +834,13 @@
       h("div", { className: "admin-grid" },
         h(CrudManager, {
           type: "transaction",
-          records: data.transactions,
+          records: sortedTransactions,
           onSave: (record, editingId) => saveRecord("transactions", record, editingId),
           onDelete: (id) => deleteRecord("transactions", id),
         }),
         h(CrudManager, {
           type: "settlement",
-          records: data.settlements,
+          records: sortedSettlements,
           onSave: (record, editingId) => saveRecord("settlements", record, editingId),
           onDelete: (id) => deleteRecord("settlements", id),
         })
