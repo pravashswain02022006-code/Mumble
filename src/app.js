@@ -3,8 +3,8 @@
   const h = React.createElement;
 
   const appName = "Mumble";
-  const userCredentials = { username: "master432", password: "master432" };
-  const adminCredentials = { username: "admin777", password: "admin777" };
+  const masterAdminCredentials = { username: "master777", password: "Mumb!e@2026" };
+  const userCredentials = { username: "user432", password: "Us3r$View1" };
   const dbKey = "mumble-local-db";
 
   // ── Supabase config ────────────────────────────────────────────────────────
@@ -14,31 +14,77 @@
 
   // Map Supabase rows (snake_case) → app objects (camelCase)
   function mapTxFromDb(row) {
-    return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "" };
+    return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001" };
   }
   function mapStFromDb(row) {
-    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "" };
+    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001" };
   }
   // Map app objects → Supabase rows
   function mapTxToDb(r) {
-    return { id: r.id, amount: r.amount, vpa: r.vpa || "", payer: r.payer || "", remark: r.remark || "", date: r.date };
+    return { id: r.id, amount: r.amount, vpa: r.vpa || "", payer: r.payer || "", remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001" };
   }
   function mapStToDb(r) {
-    return { id: r.id, amount: r.amount, commission: r.commission, commission_amount: r.commissionAmount, paid: r.paid, remark: r.remark || "", date: r.date };
+    return { id: r.id, amount: r.amount, commission: r.commission, commission_amount: r.commissionAmount, paid: r.paid, remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001" };
+  }
+  // Map admin rows
+  function mapAdminFromDb(row) {
+    return { id: row.id, username: row.username || "", password: row.password || "", role: row.role || "admin", date: row.date || "" };
+  }
+  function mapAdminToDb(r) {
+    return { id: r.id, username: r.username, password: r.password, role: r.role || "admin", date: r.date };
+  }
+  // Map user (client) rows
+  function mapUserFromDb(row) {
+    return { id: row.id, username: row.username || "", password: row.password || "", role: row.role || "user", date: row.date || "" };
+  }
+  function mapUserToDb(r) {
+    return { id: r.id, username: r.username, password: r.password, role: r.role || "user", date: r.date };
   }
 
   async function fetchAll() {
-    const [txRes, stRes] = await Promise.all([
+    const [txRes, stRes, admRes, usrRes] = await Promise.all([
       supabase.from("transactions").select("*"),
       supabase.from("settlements").select("*"),
+      supabase.from("admins").select("*"),
+      supabase.from("users").select("*"),
     ]);
     if (txRes.error) throw new Error(txRes.error.message);
     if (stRes.error) throw new Error(stRes.error.message);
+    
+    let adminsData = [];
+    if (admRes.error) {
+      console.warn("Supabase fetch admins failed or table doesn't exist:", admRes.error.message);
+      const cached = loadDb();
+      adminsData = cached.admins && cached.admins.length > 0 ? cached.admins : defaultAdmins;
+    } else {
+      adminsData = (admRes.data || []).map(mapAdminFromDb);
+      if (adminsData.length === 0) {
+        const cached = loadDb();
+        adminsData = cached.admins && cached.admins.length > 0 ? cached.admins : defaultAdmins;
+      }
+    }
+
+    let usersData = [];
+    if (usrRes.error) {
+      console.warn("Supabase fetch users failed or table doesn't exist:", usrRes.error.message);
+      const cached = loadDb();
+      usersData = cached.users && cached.users.length > 0 ? cached.users : defaultUsers;
+    } else {
+      usersData = (usrRes.data || []).map(mapUserFromDb);
+      if (usersData.length === 0) {
+        const cached = loadDb();
+        usersData = cached.users && cached.users.length > 0 ? cached.users : defaultUsers;
+      }
+    }
+
     return {
       transactions: (txRes.data || []).map(mapTxFromDb),
       settlements:  (stRes.data || []).map(mapStFromDb),
+      admins:       adminsData,
+      users:        usersData,
     };
   }
+
 
   const defaultTransactions = [
     { amount: 40808, id: "#42136985742", vpa: "1short entry darshan 02/06/26", payer: "Ab", remark: "", date: "June 2nd, 2026 11:35:00 PM" },
@@ -69,6 +115,20 @@
     { amount: 9270, id: "#615312830144", commission: "3%", commissionAmount: 270, paid: 9000, remark: "batched", date: "June 2nd, 2026 10:20:00 PM" },
     { amount: 51500, id: "#615312831002", commission: "3%", commissionAmount: 1500, paid: 50000, remark: "priority", date: "June 2nd, 2026 10:03:00 PM" },
   ];
+
+  const defaultAdmins = [
+    { id: "adm-001", username: "admin001", password: "Adm1n#Pass8", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "adm-002", username: "admin002", password: "Sec0nd$Adm9", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "adm-003", username: "admin003", password: "Th1rd&Adm!n", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
+  ];
+
+  const defaultUsers = [
+    { id: "usr-001", username: "user432", password: "Us3r$View1", role: "user", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "usr-002", username: "clientA", password: "ClientA!123", role: "user", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "usr-003", username: "clientB", password: "ClientB!123", role: "user", date: "June 7th, 2026 07:00:00 PM" },
+  ];
+
+
 
   function cx() {
     return Array.from(arguments).filter(Boolean).join(" ");
@@ -101,6 +161,18 @@
     return row[key];
   }
 
+  function validatePassword(pw) {
+    if (typeof pw !== "string") return "Password is required";
+    if (pw.length < 8) return "Min 8 characters";
+    if (pw.length > 16) return "Max 16 characters";
+    if (/\s/.test(pw)) return "No spaces allowed";
+    if (!/[A-Z]/.test(pw)) return "Need 1 uppercase letter";
+    if (!/[a-z]/.test(pw)) return "Need 1 lowercase letter";
+    if (!/[0-9]/.test(pw)) return "Need 1 number";
+    if (!/[^A-Za-z0-9]/.test(pw)) return "Need 1 special character";
+    return "";
+  }
+
   function navigate(route) {
     window.history.pushState({}, "", route);
     window.dispatchEvent(new PopStateEvent("popstate"));
@@ -119,10 +191,18 @@
   function loadDb() {
     try {
       const stored = JSON.parse(localStorage.getItem(dbKey) || "null");
-      if (stored && Array.isArray(stored.transactions) && Array.isArray(stored.settlements)) return stored;
+      if (stored && Array.isArray(stored.transactions) && Array.isArray(stored.settlements)) {
+        return {
+          transactions: stored.transactions,
+          settlements: stored.settlements,
+          admins: Array.isArray(stored.admins) && stored.admins.length > 0 ? stored.admins : defaultAdmins,
+          users: Array.isArray(stored.users) && stored.users.length > 0 ? stored.users : defaultUsers
+        };
+      }
     } catch (error) {}
-    return { transactions: defaultTransactions, settlements: defaultSettlements };
+    return { transactions: defaultTransactions, settlements: defaultSettlements, admins: defaultAdmins, users: defaultUsers };
   }
+
 
   function csvEscape(value) {
     const text = String(value == null ? "" : value);
@@ -244,30 +324,70 @@
     return h("div", { className: "brand-mark", "aria-label": appName }, h("span", null), h("span", null));
   }
 
-  function Login({ role, onLogin }) {
+  function Login({ onLogin, admins, users }) {
+    const [loginRole, setLoginRole] = useState("user");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
-    const expected = role === "admin" ? adminCredentials : userCredentials;
-    const title = role === "admin" ? "Admin Access" : "Welcome Back";
+    const titles = { user: "Welcome Back", admin: "Admin Access", masteradmin: "Master Admin" };
+    const subtitles = { user: "Please sign in to continue", admin: "Sign in to manage records", masteradmin: "Full control access" };
 
     function submit(e) {
       e.preventDefault();
-      if (username === expected.username && password === expected.password) {
-        setError("");
-        onLogin(role);
-        navigate(role === "admin" ? "/admin" : "/not-found");
+      if (loginRole === "masteradmin") {
+        if (username === masterAdminCredentials.username && password === masterAdminCredentials.password) {
+          setError("");
+          onLogin("masteradmin");
+          navigate("/admin");
+        } else {
+          setError("Invalid ID or password");
+        }
+      } else if (loginRole === "admin") {
+        // Check Supabase admin list only
+        const found = (admins || []).find(function (adm) {
+          return adm.username === username && adm.password === password;
+        });
+        if (found) {
+          setError("");
+          onLogin("admin");
+          navigate("/admin");
+        } else {
+          setError("Invalid ID or password");
+        }
       } else {
-        setError("Invalid ID or password");
+        // Client/User login checking database users
+        const found = (users || []).find(function (usr) {
+          return usr.username === username && usr.password === password;
+        });
+        if (found) {
+          setError("");
+          onLogin("user", found.id);
+          navigate("/dashboards/home");
+        } else {
+          setError("Invalid ID or password");
+        }
       }
     }
 
     return h("main", { className: "login-page" },
+      h("div", { className: "role-selector-wrap" },
+        h("div", { className: "role-selector" },
+          h("select", { value: loginRole, onChange: (e) => { setLoginRole(e.target.value); setError(""); } },
+            h("option", { value: "user" }, "User"),
+            h("option", { value: "admin" }, "Admin"),
+            h("option", { value: "masteradmin" }, "Master Admin")
+          ),
+          h("div", { className: "role-display", "aria-hidden": true },
+            loginRole === "user" ? "User" : loginRole === "admin" ? "Admin" : "Master Admin",
+            h("span", { className: "role-chevron" })
+          )
+        )
+      ),
       h("form", { className: "login-card", onSubmit: submit },
         h(Logo),
         h("h1", null, appName),
-        h("h2", null, title),
-        h("p", null, role === "admin" ? "Sign in to manage records" : "Please sign in to continue"),
+        h("h2", null, titles[loginRole] || "Sign In"),
+        h("p", null, subtitles[loginRole] || ""),
         h("label", null, "User ID", h("input", {
           autoComplete: "username",
           placeholder: "Enter User ID",
@@ -284,9 +404,6 @@
         error && h("div", { className: "error" }, error),
         h("button", { className: "primary-button" }, "Sign In"),
         h("div", { className: "legal-links" },
-          role === "admin"
-            ? h("button", { type: "button", onClick: () => navigate("/login") }, "User Login")
-            : h("button", { type: "button", onClick: () => navigate("/admin") }, "Admin Login"),
           h("a", { href: "##" }, "Privacy Notice")
         )
       )
@@ -407,7 +524,7 @@
   // Shared summary shown on both Recent Transaction and Recent Settlement pages
   function SummaryStats({ type, allTransactions, allSettlements }) {
     const txTotal  = allTransactions.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const stTotal  = allSettlements.reduce((sum, r) => sum + Number(r.paid   || 0), 0);
+    const stTotal  = allSettlements.reduce((sum, r) => sum + Number(r.amount || 0), 0);
     const balance  = txTotal - stTotal;
     const countLabel = type === "transaction" ? "Transaction Count" : "Settlement Count";
     const countValue = type === "transaction" ? allTransactions.length : allSettlements.length;
@@ -633,22 +750,28 @@
     return parseFloat((amt * rate).toFixed(2));
   }
 
-  function CrudManager({ type, records, onSave, onDelete }) {
-    const emptyTransaction = { amount: "", id: "", vpa: "", payer: "", remark: "", date: nowLabel() };
-    const emptySettlement = { amount: "", id: "", commission: "3", paid: "", remark: "", date: nowLabel() };
+  function CrudManager({ type, records, onSave, onDelete, canEdit, canDelete, isMaster, users }) {
+    const emptyTransaction = { clientId: "", amount: "", id: "", vpa: "", payer: "", remark: "", date: nowLabel() };
+    const emptySettlement = { clientId: "", amount: "", id: "", commission: "3", paid: "", remark: "", date: nowLabel() };
     const empty = type === "transaction" ? emptyTransaction : emptySettlement;
     const [form, setForm] = useState(empty);
     const [editingId, setEditingId] = useState("");
 
     // Editable fields — amount and commissionAmount are both auto-calculated from paid
+    const baseTxFields = [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]];
+    const baseStFields = [["id", "Transaction Id"], ["commission", "Commission"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
+    
     const fields = type === "transaction"
-      ? [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]]
-      : [["id", "Transaction Id"], ["commission", "Commission"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
+      ? (isMaster ? [["clientId", "Client"]].concat(baseTxFields) : baseTxFields)
+      : (isMaster ? [["clientId", "Client"]].concat(baseStFields) : baseStFields);
 
     // Table display columns (includes Commission Amount for settlements)
+    const baseTxTableFields = [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]];
+    const baseStTableFields = [["amount", "Amount"], ["id", "Transaction Id"], ["commission", "Commission"], ["commissionAmount", "Commission Amount"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
+
     const tableFields = type === "transaction"
-      ? [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]]
-      : [["amount", "Amount"], ["id", "Transaction Id"], ["commission", "Commission"], ["commissionAmount", "Commission Amount"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
+      ? (isMaster ? [["clientId", "Client"]].concat(baseTxTableFields) : baseTxTableFields)
+      : (isMaster ? [["clientId", "Client"]].concat(baseStTableFields) : baseStTableFields);
 
     function update(name, value) {
       setForm((current) => ({ ...current, [name]: value }));
@@ -690,11 +813,21 @@
     return h("section", { className: "admin-card" },
       h("div", { className: "panel-title" },
         h("h2", null, type === "transaction" ? "Transactions" : "Settlement"),
-        editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); } }, "Cancel Edit")
+        canEdit && editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); } }, "Cancel Edit")
       ),
       h("form", { className: cx("admin-form", type === "settlement" && "admin-form-settlement"), onSubmit: submit },
         fields.map(([key, label]) => {
           // Commission field: numeric input with fixed % suffix
+          if (key === "clientId") {
+            return h("label", { key }, label, h("select", {
+              value: recordValue(form, key),
+              onChange: (e) => update(key, e.target.value),
+              required: true
+            },
+              h("option", { value: "" }, "Select Client..."),
+              (users || []).map(u => h("option", { key: u.id, value: u.id }, u.username + " (" + u.id + ")"))
+            ));
+          }
           if (key === "commission") {
             return h("label", { key },
               label,
@@ -747,19 +880,19 @@
             tabIndex: -1,
           })
         ),
-        h("button", { className: "primary-button" }, editingId ? "Update Record" : "Add Record")
+        h("button", { className: "primary-button" }, canEdit && editingId ? "Update Record" : "Add Record")
       ),
       h("div", { className: "admin-table-wrap" },
         h("table", null,
           h("thead", null, h("tr", null,
             tableFields.map((field) => h("th", { key: field[0] }, field[1])),
-            h("th", null, "Actions")
+            (canEdit || canDelete) && h("th", null, "Actions")
           )),
           h("tbody", null, records.map((record) => h("tr", { key: record.id },
-            tableFields.map(([key]) => h("td", { key }, key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : recordValue(record, key))),
-            h("td", { className: "row-actions" },
-              h("button", { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
-              h("button", { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
+            tableFields.map(([key]) => h("td", { key }, key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key)))),
+            (canEdit || canDelete) && h("td", { className: "row-actions" },
+              canEdit && h("button", { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
+              canDelete && h("button", { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
             )
           )))
         )
@@ -767,35 +900,80 @@
     );
   }
 
-  function AdminPage({ data, setData, onLogout, dbError, onDismissError }) {
+  function ClientSelection({ clients, onSelect, onLogout, role }) {
+    return h("main", { className: "client-select-page" },
+      h("div", { className: "client-select-card" },
+        h(Logo),
+        h("h1", null, appName),
+        h("h2", null, "Select Client"),
+        h("p", null, "Choose a client to manage transactions and settlements"),
+        h("div", { className: "client-list" },
+          clients.length === 0
+            ? h("p", { className: "empty-clients" }, "No clients found. Please contact Master Admin to create clients.")
+            : clients.map(c => h("button", {
+                key: c.id,
+                className: "client-select-btn",
+                onClick: () => onSelect(c.id)
+              },
+                h("span", { className: "client-name" }, c.username),
+                h("span", { className: "client-id" }, c.id)
+              ))
+        ),
+        h("div", { className: "client-select-footer" },
+          h("button", { className: "secondary-button", onClick: onLogout }, "Logout")
+        )
+      )
+    );
+  }
+
+  function AdminPage({ data, setData, onLogout, dbError, onDismissError, role, selectedClientId, onSelectClient }) {
     const [saving, setSaving] = useState(false);
+    const isMaster = role === "masteradmin";
 
     const sortedTransactions = useMemo(() => {
-      return (data.transactions || []).slice().sort((a, b) => {
-        const aVal = sortableValue(a, "date");
-        const bVal = sortableValue(b, "date");
-        return bVal - aVal;
-      });
-    }, [data.transactions]);
+      return (data.transactions || [])
+        .filter((t) => isMaster ? (!selectedClientId || t.clientId === selectedClientId) : t.clientId === selectedClientId)
+        .slice()
+        .sort((a, b) => {
+          const aVal = sortableValue(a, "date");
+          const bVal = sortableValue(b, "date");
+          return bVal - aVal;
+        });
+    }, [data.transactions, selectedClientId, isMaster]);
 
     const sortedSettlements = useMemo(() => {
-      return (data.settlements || []).slice().sort((a, b) => {
-        const aVal = sortableValue(a, "date");
-        const bVal = sortableValue(b, "date");
-        return bVal - aVal;
+      return (data.settlements || [])
+        .filter((s) => isMaster ? (!selectedClientId || s.clientId === selectedClientId) : s.clientId === selectedClientId)
+        .slice()
+        .sort((a, b) => {
+          const aVal = sortableValue(a, "date");
+          const bVal = sortableValue(b, "date");
+          return bVal - aVal;
+        });
+    }, [data.settlements, selectedClientId, isMaster]);
+
+    if (!selectedClientId && !isMaster) {
+      return h(ClientSelection, {
+        clients: data.users || [],
+        onSelect: onSelectClient,
+        onLogout,
+        role
       });
-    }, [data.settlements]);
+    }
+
+    const clientObj = (data.users || []).find(u => u.id === selectedClientId) || { username: selectedClientId };
 
     async function saveRecord(kind, record, editingId) {
+      const prepared = Object.assign({}, record, { clientId: record.clientId || selectedClientId || "usr-001" });
       const table = kind === "transactions" ? "transactions" : "settlements";
-      const dbRecord = kind === "transactions" ? mapTxToDb(record) : mapStToDb(record);
+      const dbRecord = kind === "transactions" ? mapTxToDb(prepared) : mapStToDb(prepared);
       // Optimistic update
       setData((current) => {
         const list = current[kind];
-        const exists = list.some((item) => item.id === editingId || item.id === record.id);
+        const exists = list.some((item) => item.id === editingId || item.id === prepared.id);
         const nextList = exists
-          ? list.map((item) => item.id === (editingId || record.id) ? record : item)
-          : [record].concat(list);
+          ? list.map((item) => item.id === (editingId || prepared.id) ? prepared : item)
+          : [prepared].concat(list);
         return Object.assign({}, current, { [kind]: nextList });
       });
       setSaving(true);
@@ -821,32 +999,367 @@
       }
     }
 
+    const txTotal = sortedTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const stTotal = sortedSettlements.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    const balance = txTotal - stTotal;
+
+    const summaryCards = (!isMaster || selectedClientId) ? h("div", { className: "admin-summary-cards" },
+      h("div", { className: "admin-stat-card" }, h("h3", null, "Total Transactions"), h("p", { className: "text-green" }, money(txTotal, true))),
+      h("div", { className: "admin-stat-card" }, h("h3", null, "Total Settlements"), h("p", { className: "text-orange" }, money(stTotal, true))),
+      h("div", { className: "admin-stat-card" }, h("h3", null, "Balance Amount"), h("p", { className: "text-red" }, money(balance, true)))
+    ) : null;
+
     return h("main", { className: "admin-page" },
       h("header", { className: "admin-header" },
-        h("div", null, h(Logo), h("div", null, h("p", null, appName), h("h1", null, "Admin Control"))),
+        h("div", null, h(Logo), h("div", null,
+          h("p", null, appName),
+          h("h1", null, isMaster ? "Master Admin Control" : "Admin Panel")
+        )),
         h("div", { className: "admin-header-actions" },
+          isMaster && h("select", {
+            className: "secondary-button client-dropdown",
+            value: selectedClientId,
+            onChange: (e) => onSelectClient(e.target.value)
+          },
+            h("option", { value: "" }, "All Clients"),
+            (data.users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
+          ),
+          !isMaster && h("span", { className: "client-info-badge" }, "Client: " + (clientObj.username || "None")),
+          !isMaster && h("button", { className: "secondary-button switch-client-btn", onClick: () => onSelectClient("") }, "Switch Client"),
+          isMaster && h("span", { className: "role-badge master" }, "Master Admin"),
+          !isMaster && h("span", { className: "role-badge" }, "Admin"),
           saving && h("span", { className: "saving-indicator" }, "Saving…"),
-          h("button", { className: "secondary-button", onClick: () => navigate("/dashboards/home") }, "User App"),
+          h("button", { className: "secondary-button", onClick: () => onLogout() }, "User Portal"),
           h("button", { className: "primary-button", onClick: onLogout }, "Logout")
         )
       ),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
+      summaryCards,
       h("div", { className: "admin-grid" },
         h(CrudManager, {
           type: "transaction",
           records: sortedTransactions,
           onSave: (record, editingId) => saveRecord("transactions", record, editingId),
           onDelete: (id) => deleteRecord("transactions", id),
+          canEdit: isMaster,
+          canDelete: isMaster,
+          isMaster,
+          users: data.users || []
         }),
         h(CrudManager, {
           type: "settlement",
           records: sortedSettlements,
           onSave: (record, editingId) => saveRecord("settlements", record, editingId),
           onDelete: (id) => deleteRecord("settlements", id),
-        })
+          canEdit: isMaster,
+          canDelete: isMaster,
+          isMaster,
+          users: data.users || []
+        }),
+        isMaster && h(AdminManager, { admins: data.admins || [], setData }),
+        isMaster && h(UserManager, { users: data.users || [], setData })
       )
     );
   }
+
+  // ── Admin Manager (Master Admin only) ───────────────────────────────────
+  function AdminManager({ admins, setData }) {
+    const emptyAdmin = { username: "", password: "", date: nowLabel() };
+    const [form, setForm] = useState(emptyAdmin);
+    const [editingId, setEditingId] = useState("");
+    const [error, setError] = useState("");
+    const [showPasswords, setShowPasswords] = useState({});
+
+    const sortedAdmins = useMemo(() => {
+      return admins.slice().sort((a, b) => {
+        const aVal = sortableValue(a, "date");
+        const bVal = sortableValue(b, "date");
+        return bVal - aVal;
+      });
+    }, [admins]);
+
+    function nextId() {
+      let max = 0;
+      admins.forEach(function (a) {
+        const num = parseInt(String(a.id).replace("adm-", ""), 10);
+        if (!isNaN(num) && num > max) max = num;
+      });
+      return "adm-" + String(max + 1).padStart(3, "0");
+    }
+
+    function update(name, value) {
+      setForm((current) => ({ ...current, [name]: value }));
+      if (name === "password") setError("");
+    }
+
+    async function submit(e) {
+      e.preventDefault();
+      const pwError = validatePassword(form.password);
+      if (pwError) { setError(pwError); return; }
+      if (!form.username.trim()) { setError("Username is required"); return; }
+      // Check for duplicate username
+      const dup = admins.find(function (a) {
+        return a.username === form.username.trim() && a.id !== editingId;
+      });
+      if (dup) { setError("Username already exists"); return; }
+
+      const record = {
+        id: editingId || nextId(),
+        username: form.username.trim(),
+        password: form.password,
+        role: "admin",
+        date: editingId ? (admins.find(function (a) { return a.id === editingId; }) || {}).date || form.date : nowLabel(),
+      };
+      // Optimistic update
+      setData(function (current) {
+        const list = current.admins || [];
+        const exists = list.some(function (item) { return item.id === record.id; });
+        const nextList = exists
+          ? list.map(function (item) { return item.id === record.id ? record : item; })
+          : [record].concat(list);
+        return Object.assign({}, current, { admins: nextList });
+      });
+      try {
+        const { error: dbErr } = await supabase.from("admins").upsert(mapAdminToDb(record));
+        if (dbErr) throw new Error(dbErr.message);
+      } catch (err) {
+        console.warn("Supabase admin write failed:", err.message);
+      }
+      setForm(emptyAdmin);
+      setEditingId("");
+      setError("");
+    }
+
+    function edit(admin) {
+      setEditingId(admin.id);
+      setForm({ username: admin.username, password: admin.password, date: admin.date });
+      setError("");
+    }
+
+    async function remove(id) {
+      setData(function (current) {
+        return Object.assign({}, current, { admins: (current.admins || []).filter(function (item) { return item.id !== id; }) });
+      });
+      try {
+        const { error: dbErr } = await supabase.from("admins").delete().eq("id", id);
+        if (dbErr) throw new Error(dbErr.message);
+      } catch (err) {
+        console.warn("Supabase admin delete failed:", err.message);
+      }
+    }
+
+    function togglePassword(id) {
+      setShowPasswords(function (prev) {
+        var next = Object.assign({}, prev);
+        next[id] = !next[id];
+        return next;
+      });
+    }
+
+    return h("section", { className: "admin-card admin-manager-card" },
+      h("div", { className: "panel-title" },
+        h("h2", null, "Manage Admins"),
+        editingId && h("button", { className: "secondary-button", onClick: function () { setEditingId(""); setForm(emptyAdmin); setError(""); } }, "Cancel Edit")
+      ),
+      h("form", { className: "admin-form admin-manager-form", onSubmit: submit },
+        h("label", null, "Username", h("input", {
+          required: true,
+          placeholder: "e.g. admin004",
+          value: form.username,
+          onChange: function (e) { update("username", e.target.value); },
+        })),
+        h("label", null, "Password", h("input", {
+          required: true,
+          placeholder: "Min 8 chars, mixed case, digit, special",
+          value: form.password,
+          onChange: function (e) { update("password", e.target.value); },
+        })),
+        h("button", { className: "primary-button" }, editingId ? "Update Admin" : "Add Admin"),
+        error && h("div", { className: "admin-pw-error" }, error)
+      ),
+      h("div", { className: "admin-table-wrap" },
+        h("table", null,
+          h("thead", null, h("tr", null,
+            h("th", null, "ID"),
+            h("th", null, "Username"),
+            h("th", null, "Password"),
+            h("th", null, "Created"),
+            h("th", null, "Actions")
+          )),
+          h("tbody", null, sortedAdmins.map(function (admin) {
+            return h("tr", { key: admin.id },
+              h("td", null, admin.id),
+              h("td", null, admin.username),
+              h("td", { className: "password-cell" },
+                h("span", null, showPasswords[admin.id] ? admin.password : "••••••••"),
+                h("button", {
+                  type: "button",
+                  className: "toggle-pw-btn",
+                  onClick: function () { togglePassword(admin.id); },
+                  title: showPasswords[admin.id] ? "Hide" : "Show"
+                }, showPasswords[admin.id] ? "🙈" : "👁")
+              ),
+              h("td", null, admin.date),
+              h("td", { className: "row-actions" },
+                h("button", { className: "secondary-button", onClick: function () { edit(admin); } }, "Edit"),
+                h("button", { className: "danger-button", onClick: function () { remove(admin.id); } }, "Delete")
+              )
+            );
+          }))
+        )
+      )
+    );
+  }
+
+  // ── User Manager (Master Admin only) ───────────────────────────────────
+  function UserManager({ users, setData }) {
+    const emptyUser = { username: "", password: "", date: nowLabel() };
+    const [form, setForm] = useState(emptyUser);
+    const [editingId, setEditingId] = useState("");
+    const [error, setError] = useState("");
+    const [showPasswords, setShowPasswords] = useState({});
+
+    const sortedUsers = useMemo(() => {
+      return users.slice().sort((a, b) => {
+        const aVal = sortableValue(a, "date");
+        const bVal = sortableValue(b, "date");
+        return bVal - aVal;
+      });
+    }, [users]);
+
+    function nextId() {
+      let max = 0;
+      users.forEach(function (u) {
+        const num = parseInt(String(u.id).replace("usr-", ""), 10);
+        if (!isNaN(num) && num > max) max = num;
+      });
+      return "usr-" + String(max + 1).padStart(3, "0");
+    }
+
+    function update(name, value) {
+      setForm((current) => ({ ...current, [name]: value }));
+      if (name === "password") setError("");
+    }
+
+    async function submit(e) {
+      e.preventDefault();
+      const pwError = validatePassword(form.password);
+      if (pwError) { setError(pwError); return; }
+      if (!form.username.trim()) { setError("Username is required"); return; }
+      // Check for duplicate username
+      const dup = users.find(function (u) {
+        return u.username === form.username.trim() && u.id !== editingId;
+      });
+      if (dup) { setError("Username already exists"); return; }
+
+      const record = {
+        id: editingId || nextId(),
+        username: form.username.trim(),
+        password: form.password,
+        role: "user",
+        date: editingId ? (users.find(function (u) { return u.id === editingId; }) || {}).date || form.date : nowLabel(),
+      };
+      // Optimistic update
+      setData(function (current) {
+        const list = current.users || [];
+        const exists = list.some(function (item) { return item.id === record.id; });
+        const nextList = exists
+          ? list.map(function (item) { return item.id === record.id ? record : item; })
+          : [record].concat(list);
+        return Object.assign({}, current, { users: nextList });
+      });
+      try {
+        const { error: dbErr } = await supabase.from("users").upsert(mapUserToDb(record));
+        if (dbErr) throw new Error(dbErr.message);
+      } catch (err) {
+        console.warn("Supabase user write failed:", err.message);
+      }
+      setForm(emptyUser);
+      setEditingId("");
+      setError("");
+    }
+
+    function edit(user) {
+      setEditingId(user.id);
+      setForm({ username: user.username, password: user.password, date: user.date });
+      setError("");
+    }
+
+    async function remove(id) {
+      setData(function (current) {
+        return Object.assign({}, current, { users: (current.users || []).filter(function (item) { return item.id !== id; }) });
+      });
+      try {
+        const { error: dbErr } = await supabase.from("users").delete().eq("id", id);
+        if (dbErr) throw new Error(dbErr.message);
+      } catch (err) {
+        console.warn("Supabase user delete failed:", err.message);
+      }
+    }
+
+    function togglePassword(id) {
+      setShowPasswords(function (prev) {
+        var next = Object.assign({}, prev);
+        next[id] = !next[id];
+        return next;
+      });
+    }
+
+    return h("section", { className: "admin-card admin-manager-card" },
+      h("div", { className: "panel-title" },
+        h("h2", null, "Manage Clients"),
+        editingId && h("button", { className: "secondary-button", onClick: function () { setEditingId(""); setForm(emptyUser); setError(""); } }, "Cancel Edit")
+      ),
+      h("form", { className: "admin-form admin-manager-form", onSubmit: submit },
+        h("label", null, "Username", h("input", {
+          required: true,
+          placeholder: "e.g. user433",
+          value: form.username,
+          onChange: function (e) { update("username", e.target.value); },
+        })),
+        h("label", null, "Password", h("input", {
+          required: true,
+          placeholder: "Min 8 chars, mixed case, digit, special",
+          value: form.password,
+          onChange: function (e) { update("password", e.target.value); },
+        })),
+        h("button", { className: "primary-button" }, editingId ? "Update Client" : "Add Client"),
+        error && h("div", { className: "admin-pw-error" }, error)
+      ),
+      h("div", { className: "admin-table-wrap" },
+        h("table", null,
+          h("thead", null, h("tr", null,
+            h("th", null, "ID"),
+            h("th", null, "Username"),
+            h("th", null, "Password"),
+            h("th", null, "Created"),
+            h("th", null, "Actions")
+          )),
+          h("tbody", null, sortedUsers.map(function (user) {
+            return h("tr", { key: user.id },
+              h("td", null, user.id),
+              h("td", null, user.username),
+              h("td", { className: "password-cell" },
+                h("span", null, showPasswords[user.id] ? user.password : "••••••••"),
+                h("button", {
+                  type: "button",
+                  className: "toggle-pw-btn",
+                  onClick: function () { togglePassword(user.id); },
+                  title: showPasswords[user.id] ? "Hide" : "Show"
+                }, showPasswords[user.id] ? "🙈" : "👁")
+              ),
+              h("td", null, user.date),
+              h("td", { className: "row-actions" },
+                h("button", { className: "secondary-button", onClick: function () { edit(user); } }, "Edit"),
+                h("button", { className: "danger-button", onClick: function () { remove(user.id); } }, "Delete")
+              )
+            );
+          }))
+        )
+      )
+    );
+  }
+
 
   function Appearance({ compact, toggleDensity, onResetDb }) {
     const [notifications, setNotifications] = useState(localStorage.getItem("mumble-notifications") || "Stacked");
@@ -904,15 +1417,33 @@
 
   function App() {
     const route = useRoute();
-    const [data, setData] = useState(() => ({ transactions: [], settlements: [] }));
+    const [data, setData] = useState(() => ({ transactions: [], settlements: [], admins: [], users: [] }));
     const [loading, setLoading] = useState(true);
     const [dbError, setDbError] = useState(null);
-    const [role, setRole] = useState("");
+    const [role, setRole] = useState(() => localStorage.getItem("mumble-role") || "");
+    const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem("mumble-current-user-id") || "");
+    const [selectedClientId, setSelectedClientId] = useState(() => localStorage.getItem("mumble-selected-client-id") || "");
 
     // Mirror to localStorage whenever data changes (fallback cache)
     useEffect(() => {
       localStorage.setItem(dbKey, JSON.stringify(data));
     }, [data]);
+
+    // Keep role, currentUserId, selectedClientId in sync with local storage
+    useEffect(() => {
+      if (role) localStorage.setItem("mumble-role", role);
+      else localStorage.removeItem("mumble-role");
+    }, [role]);
+
+    useEffect(() => {
+      if (currentUserId) localStorage.setItem("mumble-current-user-id", currentUserId);
+      else localStorage.removeItem("mumble-current-user-id");
+    }, [currentUserId]);
+
+    useEffect(() => {
+      if (selectedClientId) localStorage.setItem("mumble-selected-client-id", selectedClientId);
+      else localStorage.removeItem("mumble-selected-client-id");
+    }, [selectedClientId]);
 
     // Initial fetch from Supabase
     async function refreshData() {
@@ -938,43 +1469,84 @@
         .channel("mumble-realtime")
         .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => refreshData())
         .on("postgres_changes", { event: "*", schema: "public", table: "settlements" }, () => refreshData())
+        .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, () => refreshData())
+        .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => refreshData())
         .subscribe();
       return () => supabase.removeChannel(channel);
     }, []);
 
+    const isAdmin = role === "admin" || role === "masteradmin";
+
     const normalizedRoute = useMemo(() => {
-      if (route === "/") return role === "admin" ? "/admin" : role === "user" ? "/dashboards/home" : "/login";
+      if (route === "/") return isAdmin ? "/admin" : role === "user" ? "/dashboards/home" : "/login";
       if (route === "/user") return "/not-found";
       return route;
-    }, [route, role]);
+    }, [route, role, isAdmin]);
 
     useEffect(() => {
       document.title = appName;
-      localStorage.removeItem("mumble-role");
-      if (route === "/" || (route === "/login" && role === "user")) navigate(role === "admin" ? "/admin" : role === "user" ? "/not-found" : "/login");
-    }, [route, role]);
+      if (route === "/" || (route === "/login" && role)) {
+        navigate(isAdmin ? "/admin" : role === "user" ? "/dashboards/home" : "/login");
+      }
+    }, [route, role, isAdmin]);
 
-    function login(nextRole) { setRole(nextRole); }
-    function logout() { setRole(""); navigate("/login"); }
+    function login(nextRole, userId) {
+      setRole(nextRole);
+      if (nextRole === "user" && userId) {
+        setCurrentUserId(userId);
+      }
+    }
+    
+    function logout() {
+      setRole("");
+      setCurrentUserId("");
+      setSelectedClientId("");
+      localStorage.removeItem("mumble-role");
+      localStorage.removeItem("mumble-current-user-id");
+      localStorage.removeItem("mumble-selected-client-id");
+      navigate("/login");
+    }
 
     function resetDb() {
-      const fresh = { transactions: defaultTransactions, settlements: defaultSettlements };
+      const fresh = { transactions: defaultTransactions, settlements: defaultSettlements, admins: data.admins, users: data.users };
       setData(fresh);
       localStorage.setItem(dbKey, JSON.stringify(fresh));
     }
 
+    // Filter transactions and settlements shown to user/client
+    const filteredDataForClient = useMemo(() => {
+      const uId = role === "user" ? currentUserId : selectedClientId;
+      return {
+        transactions: (data.transactions || []).filter((t) => t.clientId === uId),
+        settlements: (data.settlements || []).filter((s) => s.clientId === uId),
+        admins: data.admins,
+        users: data.users
+      };
+    }, [data, role, currentUserId, selectedClientId]);
+
     if (loading) return h(LoadingScreen);
 
+    // Admin dashboard (both masteradmin and admin land here after login)
     if (normalizedRoute.startsWith("/admin")) {
-      if (role !== "admin") return h(Login, { role: "admin", onLogin: login });
-      return h(AdminPage, { data, setData, onLogout: logout, dbError, onDismissError: () => setDbError(null) });
+      if (!isAdmin) return h(Login, { onLogin: login, admins: data.admins, users: data.users });
+      return h(AdminPage, {
+        data,
+        setData,
+        onLogout: logout,
+        dbError,
+        onDismissError: () => setDbError(null),
+        role,
+        selectedClientId,
+        onSelectClient: setSelectedClientId
+      });
     }
 
-    if (!role || normalizedRoute === "/login") return h(Login, { role: "user", onLogin: login });
+    if (!role || normalizedRoute === "/login") return h(Login, { onLogin: login, admins: data.admins, users: data.users });
     if (normalizedRoute === "/not-found") return h(NotFound);
+
     return h(Shell, {
       route: normalizedRoute,
-      data,
+      data: filteredDataForClient,
       onLogout: logout,
       onResetDb: resetDb,
       onRefreshData: refreshData,
