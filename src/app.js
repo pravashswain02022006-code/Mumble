@@ -7,6 +7,39 @@
   const adminCredentials = { username: "admin777", password: "admin777" };
   const dbKey = "mumble-local-db";
 
+  // ── Supabase config ────────────────────────────────────────────────────────
+  const SUPABASE_URL = "https://qjfnytssuyhtkxdgszdg.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZm55dHNzdXlodGt4ZGdzemRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MTI3MjYsImV4cCI6MjA5NjM4ODcyNn0.ZWgVN7ucLKalBvMpmM8gH_ICpI4j0xide_tk0FvOMTE";
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Map Supabase rows (snake_case) → app objects (camelCase)
+  function mapTxFromDb(row) {
+    return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "" };
+  }
+  function mapStFromDb(row) {
+    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "" };
+  }
+  // Map app objects → Supabase rows
+  function mapTxToDb(r) {
+    return { id: r.id, amount: r.amount, vpa: r.vpa || "", payer: r.payer || "", remark: r.remark || "", date: r.date };
+  }
+  function mapStToDb(r) {
+    return { id: r.id, amount: r.amount, commission: r.commission, commission_amount: r.commissionAmount, paid: r.paid, remark: r.remark || "", date: r.date };
+  }
+
+  async function fetchAll() {
+    const [txRes, stRes] = await Promise.all([
+      supabase.from("transactions").select("*"),
+      supabase.from("settlements").select("*"),
+    ]);
+    if (txRes.error) throw new Error(txRes.error.message);
+    if (stRes.error) throw new Error(stRes.error.message);
+    return {
+      transactions: (txRes.data || []).map(mapTxFromDb),
+      settlements:  (stRes.data || []).map(mapStFromDb),
+    };
+  }
+
   const defaultTransactions = [
     { amount: 40808, id: "#42136985742", vpa: "1short entry darshan 02/06/26", payer: "Ab", remark: "", date: "June 2nd, 2026 11:35:00 PM" },
     { amount: 44902, id: "#232145698753", vpa: "1short entry darshan 02/06/26", payer: "An", remark: "", date: "June 2nd, 2026 11:34:00 PM" },
@@ -99,6 +132,22 @@
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  // ── Loading / Error UI ─────────────────────────────────────────────────────
+  function LoadingScreen() {
+    return h("div", { className: "loading-screen" },
+      h("div", { className: "loading-spinner" }),
+      h("p", null, "Connecting to Supabase…")
+    );
+  }
+
+  function ErrorBanner({ message, onDismiss }) {
+    return h("div", { className: "db-error-banner" },
+      h("span", { className: "db-error-icon" }, "⚠"),
+      h("span", null, "Supabase unreachable — showing cached local data. ", h("strong", null, message)),
+      h("button", { onClick: onDismiss, "aria-label": "Dismiss" }, "✕")
+    );
   }
 
   function useTable(records, type, defaults) {
@@ -237,7 +286,7 @@
     );
   }
 
-  function Shell({ route, data, onLogout, onResetDb }) {
+  function Shell({ route, data, onLogout, onResetDb, onRefreshData, dbError, onDismissError }) {
     const [profileOpen, setProfileOpen] = useState(false);
     const [compact, setCompact] = useState(localStorage.getItem("mumble-density") === "compact");
     const isSettings = route.startsWith("/settings");
@@ -286,12 +335,13 @@
         h("button", { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, "MU")
       ),
       profileOpen && h(ProfileMenu, { onLogout }),
+      dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
       h("main", { className: "content" },
         route === "/dashboards/home" && h(Home),
-        route === "/dashboards/userRole/transaction" && h(TransactionPage, { mode: "recent", records: data.transactions }),
-        route === "/dashboards/userRole/settlement" && h(SettlementPage, { mode: "recent", records: data.settlements }),
-        route === "/dashboards/userRole/history/transaction" && h(TransactionPage, { mode: "history", records: data.transactions }),
-        route === "/dashboards/userRole/history/settlement" && h(SettlementPage, { mode: "history", records: data.settlements }),
+        route === "/dashboards/userRole/transaction" && h(TransactionPage, { mode: "recent", records: data.transactions, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
+        route === "/dashboards/userRole/settlement" && h(SettlementPage, { mode: "recent", records: data.settlements, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
+        route === "/dashboards/userRole/history/transaction" && h(TransactionPage, { mode: "history", records: data.transactions, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
+        route === "/dashboards/userRole/history/settlement" && h(SettlementPage, { mode: "history", records: data.settlements, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
         isSettings && h(Appearance, { compact, toggleDensity, onResetDb }),
         !isSettings && !route.startsWith("/dashboards") && h(NotFound)
       )
@@ -341,10 +391,32 @@
   }
 
   function Stat({ label, value, tone }) {
-    return h("div", { className: cx("stat", tone) }, h("span", null, label), h("strong", null, value));
+    let icon = "";
+    if (label.includes("Count")) icon = "💳 ";
+    if (label.includes("Amount")) icon = "₹ ";
+    return h("div", { className: cx("stat", tone) }, h("span", null, icon + label), h("strong", null, value));
   }
 
-  function Controls({ table, showQuery, onDownload }) {
+  // Shared summary shown on both Recent Transaction and Recent Settlement pages
+  function SummaryStats({ type, allTransactions, allSettlements }) {
+    const txTotal  = allTransactions.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const stTotal  = allSettlements.reduce((sum, r) => sum + Number(r.paid   || 0), 0);
+    const balance  = txTotal - stTotal;
+    const countLabel = type === "transaction" ? "Transaction Count" : "Settlement Count";
+    const countValue = type === "transaction" ? allTransactions.length : allSettlements.length;
+    
+    return h("div", { className: "stats summary-stats" },
+      h(Stat, { label: countLabel,           value: countValue + " records", tone: "orange" }),
+      h(Stat, { label: "Transaction Amount", value: money(txTotal, false),  tone: "green" }),
+      h(Stat, { label: "Balance Amount",     value: money(balance, false),  tone: "red" })
+    );
+  }
+
+  function Controls({ table, showQuery, onDownload, onRefreshData }) {
+    function handleRefresh() {
+      table.refresh();
+      if (onRefreshData) onRefreshData();
+    }
     return h("div", { className: "search-grid" },
       h("label", null, "Amount", h("input", {
         inputMode: "numeric",
@@ -364,7 +436,7 @@
       })),
       h("label", null, "Date Range", h("input", { value: "2026-05-04 to 2026-06-04", readOnly: true })),
       h("div", { className: "control-actions" },
-        h("button", { className: "primary-button", onClick: table.refresh }, "Refresh"),
+        h("button", { className: "primary-button", onClick: handleRefresh }, "Refresh"),
         h("button", { className: "secondary-button", onClick: table.clear }, "Clear"),
         h("button", { className: "secondary-button", onClick: onDownload }, "Download Sheet")
       )
@@ -372,16 +444,28 @@
   }
 
   function Pager({ table }) {
-    const pageButtons = Array.from({ length: Math.min(table.pages, 5) }, (_, index) => index + 1);
+    // Sliding window of 5 pages around the current page
+    let startPage = Math.max(1, table.page - 2);
+    let endPage = Math.min(table.pages, startPage + 4);
+    if (endPage - startPage < 4) {
+      startPage = Math.max(1, endPage - 4);
+    }
+    const pageButtons = [];
+    for (let i = startPage; i <= endPage; i++) {
+      pageButtons.push(i);
+    }
+
     return h("div", { className: "pager" },
       h("span", null, "Rows per page:"),
       h("select", { value: table.pageSize, onChange: (e) => table.setPageSize(e.target.value) },
         [5, 10, 20, 50, 100].map((size) => h("option", { key: size, value: size }, size))
       ),
+      h("button", { disabled: table.page === 1, onClick: () => table.setPage(1) }, "«"),
       h("button", { disabled: table.page === 1, onClick: () => table.setPage(table.page - 1) }, "‹"),
       pageButtons.map((n) => h("button", { key: n, className: n === table.page ? "active" : "", onClick: () => table.setPage(n) }, n)),
-      table.pages > 5 && h("button", { onClick: () => table.setPage(table.pages), className: table.page === table.pages ? "active" : "" }, table.pages),
-      h("button", { disabled: table.page === table.pages, onClick: () => table.setPage(table.page + 1) }, "›")
+      h("button", { disabled: table.page === table.pages, onClick: () => table.setPage(table.page + 1) }, "›"),
+      h("button", { disabled: table.page === table.pages, onClick: () => table.setPage(table.pages) }, "»"),
+      h("span", { className: "pager-info" }, `Page ${table.page} of ${table.pages}`)
     );
   }
 
@@ -405,7 +489,7 @@
             ? h("tr", null, h("td", { colSpan: heads.length, className: "empty-row" }, "No records match the current filters."))
             : table.rows.map((row) => type === "transaction"
                 ? h("tr", { key: row.id },
-                    h("td", null, money(row.amount, true)),
+                    h("td", { className: "text-green" }, money(row.amount, true)),
                     h("td", { className: "transaction-id" }, row.id),
                     h("td", null, row.vpa),
                     h("td", null, row.payer),
@@ -413,11 +497,11 @@
                     h("td", null, row.date)
                   )
                 : h("tr", { key: row.id },
-                    h("td", null, money(row.amount, false)),
+                    h("td", { className: "text-green" }, money(row.amount, false)),
                     h("td", { className: "transaction-id" }, row.id),
                     h("td", null, row.commission),
-                    h("td", null, money(row.commissionAmount, false)),
-                    h("td", null, money(row.paid, true)),
+                    h("td", { className: "text-orange" }, money(row.commissionAmount, false)),
+                    h("td", { className: "text-red" }, money(row.paid, true)),
                     h("td", null, row.remark || "—"),
                     h("td", null, row.date)
                   )
@@ -431,10 +515,8 @@
     return h("p", { className: "updated" }, "Last refreshed: " + table.refreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
   }
 
-  function TransactionPage({ mode, records }) {
-    const table = useTable(records, "transaction", mode === "recent"
-      ? { count: records.length, amount: records.reduce((sum, row) => sum + Number(row.amount || 0), 0), balance: 6705.6 }
-      : { count: records.length, amount: records.reduce((sum, row) => sum + Number(row.amount || 0), 0), balance: -46050.13 });
+  function TransactionPage({ mode, records, allTransactions, allSettlements, onRefreshData }) {
+    const table = useTable(records, "transaction", { count: records.length, amount: records.reduce((sum, row) => sum + Number(row.amount || 0), 0) });
     const title = mode === "recent" ? "Recent Transaction" : "Search Transaction History";
 
     function download() {
@@ -453,25 +535,22 @@
       h(Breadcrumb, { current: mode === "recent" ? "Recent Transaction" : "Transaction History" }),
       h("div", { className: "panel" },
         h("div", { className: "panel-title" }, h("h2", null, title), h(LastUpdated, { table })),
-        h(Controls, { table, showQuery: true, onDownload: download }),
-        h("div", { className: "stats history-stats" },
-          h(Stat, { label: "Transaction Count", value: table.totals.filteredCount + " local", tone: "neutral" }),
-          h(Stat, { label: "Transaction Amount", value: money(table.totals.amount, false), tone: "neutral" }),
-          h(Stat, { label: "Balance Amount", value: money(table.totals.balance, false), tone: table.totals.balance < 0 ? "danger" : "success" })
-        ),
+        mode === "recent"
+          ? h(SummaryStats, { type: "transaction", allTransactions, allSettlements })
+          : h("div", { className: "stats history-stats" },
+              h(Stat, { label: "Transaction Count",  value: table.totals.filteredCount + " records", tone: "orange" }),
+              h(Stat, { label: "Transaction Amount", value: money(table.totals.amount, false), tone: "green" })
+            ),
         h(DataTable, { type: "transaction", table }),
         h(Pager, { table })
       )
     );
   }
 
-  function SettlementPage({ mode, records }) {
-    const totalAmount = records.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  function SettlementPage({ mode, records, allTransactions, allSettlements, onRefreshData }) {
     const totalCommission = records.reduce((sum, row) => sum + Number(row.commissionAmount || 0), 0);
-    const totalPaid = records.reduce((sum, row) => sum + Number(row.paid || 0), 0);
-    const table = useTable(records, "settlement", mode === "recent"
-      ? { count: records.length, amount: totalAmount, balance: 6705.6 }
-      : { count: records.length, commission: totalCommission, paid: totalPaid, balance: -46050.13 });
+    const totalPaid       = records.reduce((sum, row) => sum + Number(row.paid || 0), 0);
+    const table = useTable(records, "settlement", { count: records.length, commission: totalCommission, paid: totalPaid });
     const title = mode === "recent" ? "Recent Settlement" : "Search Settlement History";
 
     function download() {
@@ -491,13 +570,13 @@
       h(Breadcrumb, { current: mode === "recent" ? "Recent Settlement" : "Settlement History" }),
       h("div", { className: "panel" },
         h("div", { className: "panel-title" }, h("h2", null, title), h(LastUpdated, { table })),
-        h(Controls, { table, showQuery: false, onDownload: download }),
-        h("div", { className: cx("stats history-stats", mode === "history" && "four") },
-          h(Stat, { label: mode === "history" ? "Settlement Count" : "Transaction Count", value: table.totals.filteredCount + " local", tone: "neutral" }),
-          h(Stat, { label: mode === "history" ? "Commission Amount" : "Transaction Amount", value: money(mode === "history" ? table.totals.commission : table.totals.amount, false), tone: "neutral" }),
-          mode === "history" && h(Stat, { label: "Settlement Amount", value: money(table.totals.paid, false), tone: "neutral" }),
-          h(Stat, { label: "Balance Amount", value: money(table.totals.balance, false), tone: table.totals.balance < 0 ? "danger" : "success" })
-        ),
+        mode === "recent"
+          ? h(SummaryStats, { type: "settlement", allTransactions, allSettlements })
+          : h("div", { className: cx("stats history-stats", "four") },
+              h(Stat, { label: "Settlement Count",   value: table.totals.filteredCount + " records", tone: "orange" }),
+              h(Stat, { label: "Commission Amount",  value: money(table.totals.commission, false), tone: "orange" }),
+              h(Stat, { label: "Settlement Amount",  value: money(table.totals.paid, false), tone: "green" })
+            ),
         h(DataTable, { type: "settlement", table }),
         h(Pager, { table })
       )
@@ -508,13 +587,33 @@
     return record[key] == null ? "" : String(record[key]);
   }
 
+  function parseCommissionRate(commissionStr) {
+    // Accepts "3%", "3.5%", "3", "3.5" — returns a fraction (e.g. 0.03)
+    const raw = String(commissionStr || "").replace(/[^0-9.]/g, "");
+    const num = parseFloat(raw);
+    return isNaN(num) ? 0 : num / 100;
+  }
+
+  function calcCommissionAmount(amount, commission) {
+    const amt = parseFloat(amount) || 0;
+    const rate = parseCommissionRate(commission);
+    return parseFloat((amt * rate).toFixed(2));
+  }
+
   function CrudManager({ type, records, onSave, onDelete }) {
     const emptyTransaction = { amount: "", id: "", vpa: "", payer: "", remark: "", date: nowLabel() };
-    const emptySettlement = { amount: "", id: "", commission: "3%", commissionAmount: "", paid: "", remark: "", date: nowLabel() };
+    const emptySettlement = { amount: "", id: "", commission: "3", paid: "", remark: "", date: nowLabel() };
     const empty = type === "transaction" ? emptyTransaction : emptySettlement;
     const [form, setForm] = useState(empty);
     const [editingId, setEditingId] = useState("");
+
+    // Editable fields — amount and commissionAmount are both auto-calculated from paid
     const fields = type === "transaction"
+      ? [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]]
+      : [["id", "Transaction Id"], ["commission", "Commission"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
+
+    // Table display columns (includes Commission Amount for settlements)
+    const tableFields = type === "transaction"
       ? [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]]
       : [["amount", "Amount"], ["id", "Transaction Id"], ["commission", "Commission"], ["commissionAmount", "Commission Amount"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
 
@@ -524,12 +623,16 @@
 
     function submit(e) {
       e.preventDefault();
-      const prepared = Object.assign({}, form, {
-        amount: Number(form.amount || 0),
-      });
+      const prepared = Object.assign({}, form);
       if (type === "settlement") {
-        prepared.commissionAmount = Number(form.commissionAmount || 0);
+        // Derive everything from paid amount + commission %
+        const commNum = String(form.commission || "0").replace(/[^0-9.]/g, "");
+        prepared.commission = commNum + "%";
         prepared.paid = Number(form.paid || 0);
+        prepared.commissionAmount = calcCommissionAmount(form.paid, commNum + "%");
+        prepared.amount = prepared.paid + prepared.commissionAmount;
+      } else {
+        prepared.amount = Number(form.amount || 0);
       }
       prepared.id = prepared.id.startsWith("#") ? prepared.id : "#" + prepared.id;
       onSave(prepared, editingId);
@@ -539,30 +642,88 @@
 
     function edit(record) {
       setEditingId(record.id);
-      setForm(Object.assign({}, record));
+      // Strip % from commission so the numeric-only input works correctly
+      const rec = Object.assign({}, record);
+      if (type === "settlement" && rec.commission) {
+        rec.commission = String(rec.commission).replace(/[^0-9.]/g, "");
+      }
+      setForm(rec);
     }
+
+    // Auto-calculated values for settlement
+    const autoCommission = type === "settlement" ? calcCommissionAmount(form.paid, form.commission) : 0;
+    const autoAmount    = type === "settlement" ? (Number(form.paid || 0) + autoCommission) : 0;
 
     return h("section", { className: "admin-card" },
       h("div", { className: "panel-title" },
         h("h2", null, type === "transaction" ? "Transactions" : "Settlement"),
         editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); } }, "Cancel Edit")
       ),
-      h("form", { className: "admin-form", onSubmit: submit },
-        fields.map(([key, label]) => h("label", { key }, label, h("input", {
-          required: key === "amount" || key === "id",
-          value: recordValue(form, key),
-          onChange: (e) => update(key, e.target.value),
-        }))),
+      h("form", { className: cx("admin-form", type === "settlement" && "admin-form-settlement"), onSubmit: submit },
+        fields.map(([key, label]) => {
+          // Commission field: numeric input with fixed % suffix
+          if (key === "commission") {
+            return h("label", { key },
+              label,
+              h("div", { className: "percent-input-wrap" },
+                h("input", {
+                  className: "percent-input",
+                  type: "number",
+                  inputMode: "decimal",
+                  min: "0",
+                  max: "100",
+                  step: "0.01",
+                  required: true,
+                  placeholder: "e.g. 3",
+                  value: recordValue(form, key),
+                  onChange: (e) => {
+                    // Only allow non-negative numbers
+                    const raw = e.target.value.replace(/[^0-9.]/g, "");
+                    update(key, raw);
+                  },
+                }),
+                h("span", { className: "percent-suffix" }, "%")
+              )
+            );
+          }
+          return h("label", { key }, label, h("input", {
+            required: key === "amount" || key === "id" || key === "paid",
+            value: recordValue(form, key),
+            onChange: (e) => update(key, e.target.value),
+          }));
+        }),
+        // Commission Amount — auto-calculated from paid × commission%
+        type === "settlement" && h("label", { key: "commissionAmount" },
+          "Commission Amount",
+          h("input", {
+            value: autoCommission > 0 || parseFloat(form.paid) > 0 ? autoCommission.toFixed(2) : "",
+            readOnly: true,
+            className: "calc-field",
+            placeholder: "Auto-calculated",
+            tabIndex: -1,
+          })
+        ),
+        // Total Amount — paid + commissionAmount
+        type === "settlement" && h("label", { key: "totalAmount" },
+          "Total Amount",
+          h("input", {
+            value: autoAmount > 0 || parseFloat(form.paid) > 0 ? autoAmount.toFixed(2) : "",
+            readOnly: true,
+            className: "calc-field",
+            placeholder: "Auto-calculated",
+            tabIndex: -1,
+          })
+        ),
         h("button", { className: "primary-button" }, editingId ? "Update Record" : "Add Record")
       ),
       h("div", { className: "admin-table-wrap" },
         h("table", null,
           h("thead", null, h("tr", null,
-            fields.map((field) => h("th", { key: field[0] }, field[1])),
+            tableFields.map((field) => h("th", { key: field[0] }, field[1])),
             h("th", null, "Actions")
           )),
           h("tbody", null, records.map((record) => h("tr", { key: record.id },
-            fields.map(([key]) => h("td", { key }, key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : recordValue(record, key))),
+            tableFields.map(([key]) => h("td", { key }, key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : recordValue(record, key))),
             h("td", { className: "row-actions" },
               h("button", { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
               h("button", { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
@@ -573,8 +734,13 @@
     );
   }
 
-  function AdminPage({ data, setData, onLogout }) {
-    function saveRecord(kind, record, editingId) {
+  function AdminPage({ data, setData, onLogout, dbError, onDismissError }) {
+    const [saving, setSaving] = useState(false);
+
+    async function saveRecord(kind, record, editingId) {
+      const table = kind === "transactions" ? "transactions" : "settlements";
+      const dbRecord = kind === "transactions" ? mapTxToDb(record) : mapStToDb(record);
+      // Optimistic update
       setData((current) => {
         const list = current[kind];
         const exists = list.some((item) => item.id === editingId || item.id === record.id);
@@ -583,20 +749,39 @@
           : [record].concat(list);
         return Object.assign({}, current, { [kind]: nextList });
       });
+      setSaving(true);
+      try {
+        const { error } = await supabase.from(table).upsert(dbRecord);
+        if (error) throw new Error(error.message);
+      } catch (err) {
+        console.warn("Supabase write failed:", err.message);
+      } finally {
+        setSaving(false);
+      }
     }
 
-    function deleteRecord(kind, id) {
+    async function deleteRecord(kind, id) {
+      const table = kind === "transactions" ? "transactions" : "settlements";
+      // Optimistic update
       setData((current) => Object.assign({}, current, { [kind]: current[kind].filter((item) => item.id !== id) }));
+      try {
+        const { error } = await supabase.from(table).delete().eq("id", id);
+        if (error) throw new Error(error.message);
+      } catch (err) {
+        console.warn("Supabase delete failed:", err.message);
+      }
     }
 
     return h("main", { className: "admin-page" },
       h("header", { className: "admin-header" },
         h("div", null, h(Logo), h("div", null, h("p", null, appName), h("h1", null, "Admin Control"))),
         h("div", { className: "admin-header-actions" },
+          saving && h("span", { className: "saving-indicator" }, "Saving…"),
           h("button", { className: "secondary-button", onClick: () => navigate("/dashboards/home") }, "User App"),
           h("button", { className: "primary-button", onClick: onLogout }, "Logout")
         )
       ),
+      dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
       h("div", { className: "admin-grid" },
         h(CrudManager, {
           type: "transaction",
@@ -670,12 +855,43 @@
 
   function App() {
     const route = useRoute();
-    const [data, setData] = useState(loadDb);
+    const [data, setData] = useState(() => ({ transactions: [], settlements: [] }));
+    const [loading, setLoading] = useState(true);
+    const [dbError, setDbError] = useState(null);
     const [role, setRole] = useState("");
 
+    // Mirror to localStorage whenever data changes (fallback cache)
     useEffect(() => {
       localStorage.setItem(dbKey, JSON.stringify(data));
     }, [data]);
+
+    // Initial fetch from Supabase
+    async function refreshData() {
+      try {
+        const fresh = await fetchAll();
+        setData(fresh);
+        setDbError(null);
+      } catch (err) {
+        setDbError(err.message);
+        // Fall back to localStorage cache
+        const cached = loadDb();
+        setData(cached);
+      }
+    }
+
+    useEffect(() => {
+      refreshData().finally(() => setLoading(false));
+    }, []);
+
+    // Supabase Realtime — auto-refresh on any DB change
+    useEffect(() => {
+      const channel = supabase
+        .channel("mumble-realtime")
+        .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => refreshData())
+        .on("postgres_changes", { event: "*", schema: "public", table: "settlements" }, () => refreshData())
+        .subscribe();
+      return () => supabase.removeChannel(channel);
+    }, []);
 
     const normalizedRoute = useMemo(() => {
       if (route === "/") return role === "admin" ? "/admin" : role === "user" ? "/dashboards/home" : "/login";
@@ -689,14 +905,8 @@
       if (route === "/" || (route === "/login" && role === "user")) navigate(role === "admin" ? "/admin" : role === "user" ? "/not-found" : "/login");
     }, [route, role]);
 
-    function login(nextRole) {
-      setRole(nextRole);
-    }
-
-    function logout() {
-      setRole("");
-      navigate("/login");
-    }
+    function login(nextRole) { setRole(nextRole); }
+    function logout() { setRole(""); navigate("/login"); }
 
     function resetDb() {
       const fresh = { transactions: defaultTransactions, settlements: defaultSettlements };
@@ -704,14 +914,24 @@
       localStorage.setItem(dbKey, JSON.stringify(fresh));
     }
 
+    if (loading) return h(LoadingScreen);
+
     if (normalizedRoute.startsWith("/admin")) {
       if (role !== "admin") return h(Login, { role: "admin", onLogin: login });
-      return h(AdminPage, { data, setData, onLogout: logout });
+      return h(AdminPage, { data, setData, onLogout: logout, dbError, onDismissError: () => setDbError(null) });
     }
 
     if (!role || normalizedRoute === "/login") return h(Login, { role: "user", onLogin: login });
     if (normalizedRoute === "/not-found") return h(NotFound);
-    return h(Shell, { route: normalizedRoute, data, onLogout: logout, onResetDb: resetDb });
+    return h(Shell, {
+      route: normalizedRoute,
+      data,
+      onLogout: logout,
+      onResetDb: resetDb,
+      onRefreshData: refreshData,
+      dbError,
+      onDismissError: () => setDbError(null),
+    });
   }
 
   ReactDOM.createRoot(document.getElementById("root")).render(h(App));
