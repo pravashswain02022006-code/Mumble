@@ -200,7 +200,7 @@
       if (username === expected.username && password === expected.password) {
         setError("");
         onLogin(role);
-        navigate(role === "admin" ? "/admin" : "/dashboards/home");
+        navigate(role === "admin" ? "/admin" : "/not-found");
       } else {
         setError("Invalid ID or password");
       }
@@ -663,15 +663,15 @@
     return h("section", { className: "not-found" },
       h("div", { className: "four-oh-four" }, "404"),
       h("h2", null, "Oops. This Page Not Found."),
-      h("p", null, "This page you are looking not available. Please back to home"),
-      h("button", { className: "primary-button", onClick: () => navigate("/login") }, "Back To Home")
+      h("p", null, "This page is not available. Please go back to home."),
+      h("button", { className: "primary-button", onClick: () => navigate("/dashboards/home") }, "Back to home")
     );
   }
 
   function App() {
     const route = useRoute();
     const [data, setData] = useState(loadDb);
-    const [role, setRole] = useState(() => localStorage.getItem("mumble-role") || "");
+    const [role, setRole] = useState("");
 
     useEffect(() => {
       localStorage.setItem(dbKey, JSON.stringify(data));
@@ -685,16 +685,15 @@
 
     useEffect(() => {
       document.title = appName;
-      if (route === "/" || (route === "/login" && role === "user")) navigate(role === "admin" ? "/admin" : role === "user" ? "/dashboards/home" : "/login");
+      localStorage.removeItem("mumble-role");
+      if (route === "/" || (route === "/login" && role === "user")) navigate(role === "admin" ? "/admin" : role === "user" ? "/not-found" : "/login");
     }, [route, role]);
 
     function login(nextRole) {
-      localStorage.setItem("mumble-role", nextRole);
       setRole(nextRole);
     }
 
     function logout() {
-      localStorage.removeItem("mumble-role");
       setRole("");
       navigate("/login");
     }
