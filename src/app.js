@@ -3,9 +3,6 @@
   const h = React.createElement;
 
   const appName = "Mumble";
-  const masterAdminCredentials = { username: "master777", password: "Mumb!e@2026" };
-  const userCredentials = { username: "user432", password: "Us3r$View1" };
-  const dbKey = "mumble-local-db";
 
   // ── Supabase config ────────────────────────────────────────────────────────
   const SUPABASE_URL = "https://qjfnytssuyhtkxdgszdg.supabase.co";
@@ -41,6 +38,21 @@
     return { id: r.id, username: r.username, password: r.password, role: r.role || "user", date: r.date };
   }
 
+  // ── Master credentials helpers (Supabase-backed) ────────────────────────
+  async function fetchMasterCreds() {
+    const { data, error } = await supabase.from("master_config").select("*").eq("id", "master").single();
+    if (error || !data) return { username: "masterLead", password: "Mumb!e@999" };
+    return { username: data.username, password: data.password };
+  }
+
+  async function saveMasterCredsToDb(creds) {
+    const { error } = await supabase.from("master_config").upsert(
+      { id: "master", username: creds.username, password: creds.password },
+      { onConflict: "id" }
+    );
+    if (error) throw new Error("master_config: " + error.message);
+  }
+
   async function fetchAll() {
     const [txRes, stRes, admRes, usrRes] = await Promise.all([
       supabase.from("transactions").select("*"),
@@ -48,40 +60,26 @@
       supabase.from("admins").select("*"),
       supabase.from("users").select("*"),
     ]);
-    if (txRes.error) throw new Error(txRes.error.message);
-    if (stRes.error) throw new Error(stRes.error.message);
-    
-    let adminsData = [];
-    if (admRes.error) {
-      console.warn("Supabase fetch admins failed or table doesn't exist:", admRes.error.message);
-      const cached = loadDb();
-      adminsData = cached.admins && cached.admins.length > 0 ? cached.admins : defaultAdmins;
-    } else {
-      adminsData = (admRes.data || []).map(mapAdminFromDb);
-      if (adminsData.length === 0) {
-        const cached = loadDb();
-        adminsData = cached.admins && cached.admins.length > 0 ? cached.admins : defaultAdmins;
-      }
-    }
+    // All four data tables must be readable — throw immediately on any error
+    if (txRes.error)  throw new Error("transactions: " + txRes.error.message);
+    if (stRes.error)  throw new Error("settlements: " + stRes.error.message);
+    if (admRes.error) throw new Error("admins: " + admRes.error.message);
+    if (usrRes.error) throw new Error("users: " + usrRes.error.message);
 
-    let usersData = [];
-    if (usrRes.error) {
-      console.warn("Supabase fetch users failed or table doesn't exist:", usrRes.error.message);
-      const cached = loadDb();
-      usersData = cached.users && cached.users.length > 0 ? cached.users : defaultUsers;
-    } else {
-      usersData = (usrRes.data || []).map(mapUserFromDb);
-      if (usersData.length === 0) {
-        const cached = loadDb();
-        usersData = cached.users && cached.users.length > 0 ? cached.users : defaultUsers;
-      }
-    }
+    // master_config — fetch separately so it never crashes the whole app
+    // (table may not exist yet until Supabase SQL is run)
+    let masterRow = { username: "masterLead", password: "Mumb!e@999" };
+    try {
+      const masterRes = await supabase.from("master_config").select("*").eq("id", "master").single();
+      if (masterRes.data) masterRow = masterRes.data;
+    } catch (_) {}
 
     return {
-      transactions: (txRes.data || []).map(mapTxFromDb),
-      settlements:  (stRes.data || []).map(mapStFromDb),
-      admins:       adminsData,
-      users:        usersData,
+      transactions:  (txRes.data || []).map(mapTxFromDb),
+      settlements:   (stRes.data || []).map(mapStFromDb),
+      admins:        (admRes.data || []).map(mapAdminFromDb),
+      users:         (usrRes.data || []).map(mapUserFromDb),
+      masterCreds:   { username: masterRow.username, password: masterRow.password },
     };
   }
 
@@ -117,15 +115,15 @@
   ];
 
   const defaultAdmins = [
-    { id: "adm-001", username: "admin001", password: "Adm1n#Pass8", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
-    { id: "adm-002", username: "admin002", password: "Sec0nd$Adm9", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
-    { id: "adm-003", username: "admin003", password: "Th1rd&Adm!n", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "adm-001", username: "adminA", password: "Adm1n#Alpha", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "adm-002", username: "adminB", password: "Beta$Adm22", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "adm-003", username: "adminC", password: "Gamm@Adm33", role: "admin", date: "June 7th, 2026 07:00:00 PM" },
   ];
 
   const defaultUsers = [
-    { id: "usr-001", username: "user432", password: "Us3r$View1", role: "user", date: "June 7th, 2026 07:00:00 PM" },
-    { id: "usr-002", username: "clientA", password: "ClientA!123", role: "user", date: "June 7th, 2026 07:00:00 PM" },
-    { id: "usr-003", username: "clientB", password: "ClientB!123", role: "user", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "usr-001", username: "clientOne", password: "Cl1ent!One", role: "user", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "usr-002", username: "clientTwo", password: "Cl1ent@Two", role: "user", date: "June 7th, 2026 07:00:00 PM" },
+    { id: "usr-003", username: "clientThree", password: "Cl1ent#Thr", role: "user", date: "June 7th, 2026 07:00:00 PM" },
   ];
 
 
@@ -188,20 +186,12 @@
     return route;
   }
 
-  function loadDb() {
-    try {
-      const stored = JSON.parse(localStorage.getItem(dbKey) || "null");
-      if (stored && Array.isArray(stored.transactions) && Array.isArray(stored.settlements)) {
-        return {
-          transactions: stored.transactions,
-          settlements: stored.settlements,
-          admins: Array.isArray(stored.admins) && stored.admins.length > 0 ? stored.admins : defaultAdmins,
-          users: Array.isArray(stored.users) && stored.users.length > 0 ? stored.users : defaultUsers
-        };
-      }
-    } catch (error) {}
-    return { transactions: defaultTransactions, settlements: defaultSettlements, admins: defaultAdmins, users: defaultUsers };
-  }
+  // One-time purge of old localStorage data cache — Supabase is now the single source of truth.
+  // This cleans up any stale cached data from the previous implementation.
+  (function purgeStaleLocalStorage() {
+    localStorage.removeItem("mumble-local-db");
+    localStorage.removeItem("mumble-master-creds");
+  })();
 
 
   function csvEscape(value) {
@@ -236,6 +226,32 @@
     );
   }
 
+  // ── Toast Notification System ──────────────────────────────────────────────
+  function useToast() {
+    const [toasts, setToasts] = useState([]);
+    function showToast(message, type) {
+      const id = Date.now() + Math.random();
+      setToasts(function(prev) { return prev.concat({ id, message, type: type || "success" }); });
+      setTimeout(function() {
+        setToasts(function(prev) { return prev.filter(function(t) { return t.id !== id; }); });
+      }, 3500);
+    }
+    return { toasts, showToast };
+  }
+
+  function ToastContainer({ toasts }) {
+    if (!toasts || toasts.length === 0) return null;
+    return h("div", { className: "toast-container", "aria-live": "polite" },
+      toasts.map(function(t) {
+        return h("div", { key: t.id, className: "toast toast-" + t.type },
+          h("span", { className: "toast-icon" }, t.type === "success" ? "✓" : t.type === "error" ? "✗" : "ℹ"),
+          h("span", { className: "toast-message" }, t.message)
+        );
+      })
+    );
+  }
+
+  // ── Table Hook ─────────────────────────────────────────────────────────────
   function useTable(records, type, defaults) {
     const [filters, setFilters] = useState({ amount: "", id: "", query: "" });
     const [page, setPage] = useState(1);
@@ -324,7 +340,7 @@
     return h("div", { className: "brand-mark", "aria-label": appName }, h("span", null), h("span", null));
   }
 
-  function Login({ onLogin, admins, users }) {
+  function Login({ onLogin, admins, users, masterCreds }) {
     const [loginRole, setLoginRole] = useState("user");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
@@ -335,7 +351,9 @@
     function submit(e) {
       e.preventDefault();
       if (loginRole === "masteradmin") {
-        if (username === masterAdminCredentials.username && password === masterAdminCredentials.password) {
+        // masterCreds comes from Supabase master_config table
+        const mc = masterCreds || { username: "masterLead", password: "Mumb!e@999" };
+        if (username === mc.username && password === mc.password) {
           setError("");
           onLogin("masteradmin");
           navigate("/admin");
@@ -410,7 +428,7 @@
     );
   }
 
-  function Shell({ route, data, onLogout, onResetDb, onRefreshData, dbError, onDismissError }) {
+  function Shell({ route, data, onLogout, onResetDb, onRefreshData, dbError, onDismissError, currentUser }) {
     const [profileOpen, setProfileOpen] = useState(false);
     const [compact, setCompact] = useState(localStorage.getItem("mumble-density") === "compact");
     const isSettings = route.startsWith("/settings");
@@ -421,12 +439,25 @@
       ["/dashboards/userRole/history/transaction", "Transaction History"],
       ["/dashboards/userRole/history/settlement", "Settlement History"],
     ];
+    const displayName = currentUser ? currentUser.username : "User";
+    const initials = displayName.slice(0, 2).toUpperCase();
 
     function toggleDensity() {
       const next = !compact;
       setCompact(next);
       localStorage.setItem("mumble-density", next ? "compact" : "comfortable");
     }
+
+    // Block browser back gesture — push a dummy state so swipe-back needs 2 gestures
+    useEffect(function() {
+      window.history.pushState({ noBack: true }, "");
+      function onPop(e) {
+        // Immediately re-push so the user stays on the current page
+        window.history.pushState({ noBack: true }, "");
+      }
+      window.addEventListener("popstate", onPop);
+      return function() { window.removeEventListener("popstate", onPop); };
+    }, [route]);
 
     return h("div", { className: cx("app-shell", compact && "compact") },
       h("aside", { className: "rail" },
@@ -435,10 +466,14 @@
           IconButton({ label: "Dashboard", active: !isSettings, onClick: () => navigate("/dashboards/home"), children: "⌂" }),
           IconButton({ label: "Settings", active: isSettings, onClick: () => navigate("/settings/appearance"), children: "⚙" })
         ),
-        h("button", { className: "avatar-dot", onClick: () => setProfileOpen(!profileOpen) }, "MU")
+        h("button", { className: "avatar-dot", title: displayName, onClick: () => setProfileOpen(!profileOpen) }, initials)
       ),
       h("aside", { className: "sidebar" },
         h("h1", null, isSettings ? "Settings" : appName),
+        h("div", { className: "sidebar-user-chip" },
+          h("span", { className: "sidebar-user-name" }, displayName),
+          currentUser && h("span", { className: "sidebar-user-id" }, currentUser.id)
+        ),
         isSettings
           ? h(React.Fragment, null,
               h("button", { className: "side-link active", onClick: () => navigate("/settings/appearance") }, "Appearance"),
@@ -455,28 +490,36 @@
         )
       ),
       h("header", { className: "topbar" },
-        h("button", { className: "back-button", onClick: () => history.back(), title: "Back" }, "‹"),
-        h("button", { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, "MU")
+        h("div", { className: "topbar-user" },
+          h("span", { className: "topbar-username" }, displayName),
+          currentUser && h("span", { className: "topbar-userid" }, currentUser.id)
+        ),
+        h("button", { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, initials)
       ),
-      profileOpen && h(ProfileMenu, { onLogout }),
+      profileOpen && h(ProfileMenu, { onLogout, currentUser }),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
       h("main", { className: "content" },
-        route === "/dashboards/home" && h(Home),
-        route === "/dashboards/userRole/transaction" && h(TransactionPage, { mode: "recent", records: data.transactions, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
-        route === "/dashboards/userRole/settlement" && h(SettlementPage, { mode: "recent", records: data.settlements, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
-        route === "/dashboards/userRole/history/transaction" && h(TransactionPage, { mode: "history", records: data.transactions, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
-        route === "/dashboards/userRole/history/settlement" && h(SettlementPage, { mode: "history", records: data.settlements, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData }),
+        route === "/dashboards/home" && h(Home, { currentUser, onRefreshData }),
+        route === "/dashboards/userRole/transaction" && h(TransactionPage, { mode: "recent", records: data.transactions, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData, currentUser }),
+        route === "/dashboards/userRole/settlement" && h(SettlementPage, { mode: "recent", records: data.settlements, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData, currentUser }),
+        route === "/dashboards/userRole/history/transaction" && h(TransactionPage, { mode: "history", records: data.transactions, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData, currentUser }),
+        route === "/dashboards/userRole/history/settlement" && h(SettlementPage, { mode: "history", records: data.settlements, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData, currentUser }),
         isSettings && h(Appearance, { compact, toggleDensity, onResetDb }),
         !isSettings && !route.startsWith("/dashboards") && h(NotFound)
       )
     );
   }
 
-  function ProfileMenu({ onLogout }) {
+  function ProfileMenu({ onLogout, currentUser }) {
+    const displayName = currentUser ? currentUser.username : "User";
+    const initials = displayName.slice(0, 2).toUpperCase();
     return h("section", { className: "profile-menu" },
       h("div", { className: "profile-head" },
-        h("div", { className: "profile-pic" }, "MU"),
-        h("span", null, "Mumble User")
+        h("div", { className: "profile-pic" }, initials),
+        h("div", { className: "profile-head-info" },
+          h("span", { className: "profile-display-name" }, displayName),
+          currentUser && h("span", { className: "profile-user-id" }, currentUser.id)
+        )
       ),
       h("button", { onClick: () => navigate("/dashboards/userRole/settlement") },
         h("span", { className: "tile-icon" }, "₹"),
@@ -500,16 +543,48 @@
     );
   }
 
-  function Home() {
+  function Home({ currentUser, onRefreshData }) {
+    const [refreshing, setRefreshing] = useState(false);
+    const displayName = currentUser ? currentUser.username : "User";
+    const userId = currentUser ? currentUser.id : "";
+
+    async function handleRefresh() {
+      setRefreshing(true);
+      if (onRefreshData) await onRefreshData();
+      setRefreshing(false);
+    }
+
     return h("section", { className: "home-grid" },
       h("div", { className: "home-title" },
-        h("p", null, "Mumble user workspace"),
-        h("h2", null, "Payment and settlement control panel")
+        h("div", { className: "home-user-badge" },
+          h("span", { className: "home-welcome" }, "Welcome back,"),
+          h("strong", { className: "home-username" }, displayName),
+          userId && h("span", { className: "home-userid" }, userId)
+        ),
+        h("h2", null, "Payment and settlement control panel"),
+        h("button", {
+          className: "refresh-btn",
+          onClick: handleRefresh,
+          disabled: refreshing,
+          title: "Refresh data from server"
+        }, refreshing ? "↺ Refreshing…" : "↺ Refresh Data")
       ),
       h("div", { className: "home-cards" },
-        h("button", { onClick: () => navigate("/dashboards/userRole/transaction") }, h("strong", null, "Recent Transactions"), h("span", null, "Review incoming payment entries")),
-        h("button", { onClick: () => navigate("/dashboards/userRole/settlement") }, h("strong", null, "Recent Settlement"), h("span", null, "Track commission and payout lines")),
-        h("button", { onClick: () => navigate("/dashboards/userRole/history/transaction") }, h("strong", null, "History Search"), h("span", null, "Filter by amount or transaction ID"))
+        h("button", { className: "home-card-tx", onClick: () => navigate("/dashboards/userRole/transaction") },
+          h("span", { className: "home-card-icon" }, "💳"),
+          h("strong", null, "Recent Transactions"),
+          h("span", null, "Review incoming payment entries")
+        ),
+        h("button", { className: "home-card-st", onClick: () => navigate("/dashboards/userRole/settlement") },
+          h("span", { className: "home-card-icon" }, "₹"),
+          h("strong", null, "Recent Settlement"),
+          h("span", null, "Track commission and payout lines")
+        ),
+        h("button", { className: "home-card-hist", onClick: () => navigate("/dashboards/userRole/history/transaction") },
+          h("span", { className: "home-card-icon" }, "🔍"),
+          h("strong", null, "History Search"),
+          h("span", null, "Filter by amount or transaction ID")
+        )
       )
     );
   }
@@ -639,9 +714,17 @@
     return h("p", { className: "updated" }, "Last refreshed: " + table.refreshedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
   }
 
-  function TransactionPage({ mode, records, allTransactions, allSettlements, onRefreshData }) {
+  function TransactionPage({ mode, records, allTransactions, allSettlements, onRefreshData, currentUser }) {
+    const [refreshing, setRefreshing] = useState(false);
     const table = useTable(records, "transaction", { count: records.length, amount: records.reduce((sum, row) => sum + Number(row.amount || 0), 0) });
-    const title = mode === "recent" ? "Recent Transaction" : "Search Transaction History";
+    const title = mode === "recent" ? "Recent Transactions" : "Search Transaction History";
+
+    async function handleRefresh() {
+      setRefreshing(true);
+      table.refresh();
+      if (onRefreshData) await onRefreshData();
+      setRefreshing(false);
+    }
 
     function download() {
       const rows = table.allRows.map((row) => ({
@@ -656,10 +739,18 @@
     }
 
     return h("section", null,
-      h(Breadcrumb, { current: mode === "recent" ? "Recent Transaction" : "Transaction History" }),
-      h("div", { className: "panel" },
-        h("div", { className: "panel-title" }, 
-          h("h2", null, title), 
+      h(Breadcrumb, { current: mode === "recent" ? "Recent Transactions" : "Transaction History" }),
+      currentUser && h("div", { className: "page-client-banner tx-banner" },
+        h("span", { className: "page-client-label" }, "Viewing data for"),
+        h("strong", { className: "page-client-name" }, currentUser.username),
+        h("span", { className: "page-client-id" }, currentUser.id)
+      ),
+      h("div", { className: "panel panel-tx" },
+        h("div", { className: "panel-title" },
+          h("div", { className: "panel-title-left" },
+            h("span", { className: "panel-type-dot tx-dot" }),
+            h("h2", null, title)
+          ),
           h("div", { className: "panel-title-actions" },
             mode === "recent" && h("select", {
               className: "sort-select",
@@ -669,6 +760,12 @@
               h("option", { value: "desc" }, "Newest to Oldest"),
               h("option", { value: "asc" }, "Oldest to Newest")
             ),
+            h("button", {
+              className: cx("refresh-btn", refreshing && "refreshing"),
+              onClick: handleRefresh,
+              disabled: refreshing,
+              title: "Refresh from server"
+            }, refreshing ? "↺…" : "↺ Refresh"),
             h(LastUpdated, { table })
           )
         ),
@@ -678,17 +775,26 @@
               h(Stat, { label: "Transaction Count",  value: table.totals.filteredCount + " records", tone: "orange" }),
               h(Stat, { label: "Transaction Amount", value: money(table.totals.amount, false), tone: "green" })
             ),
+        h(Controls, { table, showQuery: mode === "history", onDownload: download, onRefreshData }),
         h(DataTable, { type: "transaction", table }),
         h(Pager, { table })
       )
     );
   }
 
-  function SettlementPage({ mode, records, allTransactions, allSettlements, onRefreshData }) {
+  function SettlementPage({ mode, records, allTransactions, allSettlements, onRefreshData, currentUser }) {
+    const [refreshing, setRefreshing] = useState(false);
     const totalCommission = records.reduce((sum, row) => sum + Number(row.commissionAmount || 0), 0);
     const totalPaid       = records.reduce((sum, row) => sum + Number(row.paid || 0), 0);
     const table = useTable(records, "settlement", { count: records.length, commission: totalCommission, paid: totalPaid });
-    const title = mode === "recent" ? "Recent Settlement" : "Search Settlement History";
+    const title = mode === "recent" ? "Recent Settlements" : "Search Settlement History";
+
+    async function handleRefresh() {
+      setRefreshing(true);
+      table.refresh();
+      if (onRefreshData) await onRefreshData();
+      setRefreshing(false);
+    }
 
     function download() {
       const rows = table.allRows.map((row) => ({
@@ -704,10 +810,18 @@
     }
 
     return h("section", null,
-      h(Breadcrumb, { current: mode === "recent" ? "Recent Settlement" : "Settlement History" }),
-      h("div", { className: "panel" },
-        h("div", { className: "panel-title" }, 
-          h("h2", null, title), 
+      h(Breadcrumb, { current: mode === "recent" ? "Recent Settlements" : "Settlement History" }),
+      currentUser && h("div", { className: "page-client-banner st-banner" },
+        h("span", { className: "page-client-label" }, "Viewing data for"),
+        h("strong", { className: "page-client-name" }, currentUser.username),
+        h("span", { className: "page-client-id" }, currentUser.id)
+      ),
+      h("div", { className: "panel panel-st" },
+        h("div", { className: "panel-title" },
+          h("div", { className: "panel-title-left" },
+            h("span", { className: "panel-type-dot st-dot" }),
+            h("h2", null, title)
+          ),
           h("div", { className: "panel-title-actions" },
             mode === "recent" && h("select", {
               className: "sort-select",
@@ -717,6 +831,12 @@
               h("option", { value: "desc" }, "Newest to Oldest"),
               h("option", { value: "asc" }, "Oldest to Newest")
             ),
+            h("button", {
+              className: cx("refresh-btn", refreshing && "refreshing"),
+              onClick: handleRefresh,
+              disabled: refreshing,
+              title: "Refresh from server"
+            }, refreshing ? "↺…" : "↺ Refresh"),
             h(LastUpdated, { table })
           )
         ),
@@ -727,6 +847,7 @@
               h(Stat, { label: "Commission Amount",  value: money(table.totals.commission, false), tone: "orange" }),
               h(Stat, { label: "Settlement Amount",  value: money(table.totals.paid, false), tone: "green" })
             ),
+        h(Controls, { table, showQuery: mode === "history", onDownload: download, onRefreshData }),
         h(DataTable, { type: "settlement", table }),
         h(Pager, { table })
       )
@@ -750,25 +871,27 @@
     return parseFloat((amt * rate).toFixed(2));
   }
 
-  function CrudManager({ type, records, onSave, onDelete, canEdit, canDelete, isMaster, users }) {
+  function CrudManager({ type, records, onSave, onDelete, canEdit, canDelete, isMaster, users, showToast }) {
     const emptyTransaction = { clientId: "", amount: "", id: "", vpa: "", payer: "", remark: "", date: nowLabel() };
     const emptySettlement = { clientId: "", amount: "", id: "", commission: "3", paid: "", remark: "", date: nowLabel() };
     const empty = type === "transaction" ? emptyTransaction : emptySettlement;
     const [form, setForm] = useState(empty);
     const [editingId, setEditingId] = useState("");
+    const [saveError, setSaveError] = useState("");
+    const [saving, setSaving] = useState(false);
 
-    // Editable fields — amount and commissionAmount are both auto-calculated from paid
+    const sectionClass = type === "transaction" ? "admin-card admin-card-tx" : "admin-card admin-card-st";
+    const typeLabel = type === "transaction" ? "Transaction" : "Settlement";
+
+    // Editable fields
     const baseTxFields = [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]];
-    const baseStFields = [["id", "Transaction Id"], ["commission", "Commission"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
-    
+    const baseStFields = [["paid", "Paid Amount"], ["id", "Transaction Id"], ["commission", "Commission"], ["remark", "Remark"], ["date", "Entry Date"]];
     const fields = type === "transaction"
       ? (isMaster ? [["clientId", "Client"]].concat(baseTxFields) : baseTxFields)
       : (isMaster ? [["clientId", "Client"]].concat(baseStFields) : baseStFields);
 
-    // Table display columns (includes Commission Amount for settlements)
     const baseTxTableFields = [["amount", "Amount"], ["id", "Transaction Id"], ["vpa", "VPA"], ["payer", "Payer Name"], ["remark", "Remark"], ["date", "Entry Date"]];
     const baseStTableFields = [["amount", "Amount"], ["id", "Transaction Id"], ["commission", "Commission"], ["commissionAmount", "Commission Amount"], ["paid", "Paid Amount"], ["remark", "Remark"], ["date", "Entry Date"]];
-
     const tableFields = type === "transaction"
       ? (isMaster ? [["clientId", "Client"]].concat(baseTxTableFields) : baseTxTableFields)
       : (isMaster ? [["clientId", "Client"]].concat(baseStTableFields) : baseStTableFields);
@@ -777,11 +900,12 @@
       setForm((current) => ({ ...current, [name]: value }));
     }
 
-    function submit(e) {
+    async function submit(e) {
       e.preventDefault();
+      setSaveError("");
+      setSaving(true);
       const prepared = Object.assign({}, form);
       if (type === "settlement") {
-        // Derive everything from paid amount + commission %
         const commNum = String(form.commission || "0").replace(/[^0-9.]/g, "");
         prepared.commission = commNum + "%";
         prepared.paid = Number(form.paid || 0);
@@ -791,14 +915,27 @@
         prepared.amount = Number(form.amount || 0);
       }
       prepared.id = prepared.id.startsWith("#") ? prepared.id : "#" + prepared.id;
-      onSave(prepared, editingId);
-      setForm(empty);
-      setEditingId("");
+      try {
+        await onSave(prepared, editingId);
+        setForm(empty);
+        setEditingId("");
+        if (showToast) showToast(
+          editingId
+            ? typeLabel + " updated successfully!"
+            : typeLabel + " record added successfully!",
+          "success"
+        );
+      } catch (err) {
+        setSaveError("Save failed: " + err.message);
+        if (showToast) showToast("Failed to save " + typeLabel.toLowerCase() + ": " + err.message, "error");
+      } finally {
+        setSaving(false);
+      }
     }
 
     function edit(record) {
       setEditingId(record.id);
-      // Strip % from commission so the numeric-only input works correctly
+      setSaveError("");
       const rec = Object.assign({}, record);
       if (type === "settlement" && rec.commission) {
         rec.commission = String(rec.commission).replace(/[^0-9.]/g, "");
@@ -806,18 +943,19 @@
       setForm(rec);
     }
 
-    // Auto-calculated values for settlement
     const autoCommission = type === "settlement" ? calcCommissionAmount(form.paid, form.commission) : 0;
     const autoAmount    = type === "settlement" ? (Number(form.paid || 0) + autoCommission) : 0;
 
-    return h("section", { className: "admin-card" },
+    return h("section", { className: sectionClass },
       h("div", { className: "panel-title" },
-        h("h2", null, type === "transaction" ? "Transactions" : "Settlement"),
-        canEdit && editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); } }, "Cancel Edit")
+        h("div", { className: "panel-title-left" },
+          h("span", { className: type === "transaction" ? "panel-type-dot tx-dot" : "panel-type-dot st-dot" }),
+          h("h2", null, type === "transaction" ? "Transactions" : "Settlements")
+        ),
+        canEdit && editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); setSaveError(""); } }, "Cancel Edit")
       ),
       h("form", { className: cx("admin-form", type === "settlement" && "admin-form-settlement"), onSubmit: submit },
         fields.map(([key, label]) => {
-          // Commission field: numeric input with fixed % suffix
           if (key === "clientId") {
             return h("label", { key }, label, h("select", {
               value: recordValue(form, key),
@@ -843,7 +981,6 @@
                   placeholder: "e.g. 3",
                   value: recordValue(form, key),
                   onChange: (e) => {
-                    // Only allow non-negative numbers
                     const raw = e.target.value.replace(/[^0-9.]/g, "");
                     update(key, raw);
                   },
@@ -858,7 +995,6 @@
             onChange: (e) => update(key, e.target.value),
           }));
         }),
-        // Commission Amount — auto-calculated from paid × commission%
         type === "settlement" && h("label", { key: "commissionAmount" },
           "Commission Amount",
           h("input", {
@@ -869,7 +1005,6 @@
             tabIndex: -1,
           })
         ),
-        // Total Amount — paid + commissionAmount
         type === "settlement" && h("label", { key: "totalAmount" },
           "Total Amount",
           h("input", {
@@ -880,7 +1015,8 @@
             tabIndex: -1,
           })
         ),
-        h("button", { className: "primary-button" }, canEdit && editingId ? "Update Record" : "Add Record")
+        h("button", { className: "primary-button", disabled: saving }, saving ? "Saving…" : (canEdit && editingId ? "Update Record" : "Add Record")),
+        saveError && h("div", { className: "admin-pw-error" }, saveError)
       ),
       h("div", { className: "admin-table-wrap" },
         h("table", null,
@@ -915,8 +1051,7 @@
                 className: "client-select-btn",
                 onClick: () => onSelect(c.id)
               },
-                h("span", { className: "client-name" }, c.username),
-                h("span", { className: "client-id" }, c.id)
+                h("span", { className: "client-name" }, c.username)
               ))
         ),
         h("div", { className: "client-select-footer" },
@@ -926,9 +1061,10 @@
     );
   }
 
-  function AdminPage({ data, setData, onLogout, dbError, onDismissError, role, selectedClientId, onSelectClient }) {
+  function AdminPage({ data, setData, onLogout, dbError, onDismissError, role, selectedClientId, onSelectClient, onMasterCredsUpdated }) {
     const [saving, setSaving] = useState(false);
     const isMaster = role === "masteradmin";
+    const { toasts, showToast } = useToast();
 
     const sortedTransactions = useMemo(() => {
       return (data.transactions || [])
@@ -981,7 +1117,7 @@
         const { error } = await supabase.from(table).upsert(dbRecord);
         if (error) throw new Error(error.message);
       } catch (err) {
-        console.warn("Supabase write failed:", err.message);
+        throw err; // re-throw so CrudManager can catch it
       } finally {
         setSaving(false);
       }
@@ -989,13 +1125,14 @@
 
     async function deleteRecord(kind, id) {
       const table = kind === "transactions" ? "transactions" : "settlements";
-      // Optimistic update
       setData((current) => Object.assign({}, current, { [kind]: current[kind].filter((item) => item.id !== id) }));
       try {
         const { error } = await supabase.from(table).delete().eq("id", id);
         if (error) throw new Error(error.message);
+        showToast("Record deleted successfully", "success");
       } catch (err) {
         console.warn("Supabase delete failed:", err.message);
+        showToast("Delete failed: " + err.message, "error");
       }
     }
 
@@ -1004,12 +1141,13 @@
     const balance = txTotal - stTotal;
 
     const summaryCards = (!isMaster || selectedClientId) ? h("div", { className: "admin-summary-cards" },
-      h("div", { className: "admin-stat-card" }, h("h3", null, "Total Transactions"), h("p", { className: "text-green" }, money(txTotal, true))),
-      h("div", { className: "admin-stat-card" }, h("h3", null, "Total Settlements"), h("p", { className: "text-orange" }, money(stTotal, true))),
-      h("div", { className: "admin-stat-card" }, h("h3", null, "Balance Amount"), h("p", { className: "text-red" }, money(balance, true)))
+      h("div", { className: "admin-stat-card stat-card-tx" }, h("h3", null, "Total Transactions"), h("p", { className: "text-green" }, money(txTotal, true))),
+      h("div", { className: "admin-stat-card stat-card-st" }, h("h3", null, "Total Settlements"), h("p", { className: "text-orange" }, money(stTotal, true))),
+      h("div", { className: "admin-stat-card stat-card-bal" }, h("h3", null, "Balance Amount"), h("p", { className: "text-red" }, money(balance, true)))
     ) : null;
 
     return h("main", { className: "admin-page" },
+      h(ToastContainer, { toasts }),
       h("header", { className: "admin-header" },
         h("div", null, h(Logo), h("div", null,
           h("p", null, appName),
@@ -1024,7 +1162,10 @@
             h("option", { value: "" }, "All Clients"),
             (data.users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
           ),
-          !isMaster && h("span", { className: "client-info-badge" }, "Client: " + (clientObj.username || "None")),
+          !isMaster && h("div", { className: "client-info-block" },
+            h("span", { className: "client-info-label" }, "Client:"),
+            h("strong", { className: "client-info-name" }, clientObj.username || "None")
+          ),
           !isMaster && h("button", { className: "secondary-button switch-client-btn", onClick: () => onSelectClient("") }, "Switch Client"),
           isMaster && h("span", { className: "role-badge master" }, "Master Admin"),
           !isMaster && h("span", { className: "role-badge" }, "Admin"),
@@ -1044,7 +1185,8 @@
           canEdit: isMaster,
           canDelete: isMaster,
           isMaster,
-          users: data.users || []
+          users: data.users || [],
+          showToast
         }),
         h(CrudManager, {
           type: "settlement",
@@ -1054,10 +1196,12 @@
           canEdit: isMaster,
           canDelete: isMaster,
           isMaster,
-          users: data.users || []
+          users: data.users || [],
+          showToast
         }),
         isMaster && h(AdminManager, { admins: data.admins || [], setData }),
-        isMaster && h(UserManager, { users: data.users || [], setData })
+        isMaster && h(UserManager, { users: data.users || [], setData }),
+        isMaster && h(MasterAdminSettings, { masterCreds: data.masterCreds, onMasterCredsUpdated })
       )
     );
   }
@@ -1097,7 +1241,6 @@
       const pwError = validatePassword(form.password);
       if (pwError) { setError(pwError); return; }
       if (!form.username.trim()) { setError("Username is required"); return; }
-      // Check for duplicate username
       const dup = admins.find(function (a) {
         return a.username === form.username.trim() && a.id !== editingId;
       });
@@ -1110,24 +1253,24 @@
         role: "admin",
         date: editingId ? (admins.find(function (a) { return a.id === editingId; }) || {}).date || form.date : nowLabel(),
       };
-      // Optimistic update
-      setData(function (current) {
-        const list = current.admins || [];
-        const exists = list.some(function (item) { return item.id === record.id; });
-        const nextList = exists
-          ? list.map(function (item) { return item.id === record.id ? record : item; })
-          : [record].concat(list);
-        return Object.assign({}, current, { admins: nextList });
-      });
+      // Write to Supabase FIRST — only update UI on success
       try {
         const { error: dbErr } = await supabase.from("admins").upsert(mapAdminToDb(record));
         if (dbErr) throw new Error(dbErr.message);
+        setData(function (current) {
+          const list = current.admins || [];
+          const exists = list.some(function (item) { return item.id === record.id; });
+          const nextList = exists
+            ? list.map(function (item) { return item.id === record.id ? record : item; })
+            : [record].concat(list);
+          return Object.assign({}, current, { admins: nextList });
+        });
+        setForm(emptyAdmin);
+        setEditingId("");
+        setError("");
       } catch (err) {
-        console.warn("Supabase admin write failed:", err.message);
+        setError("Save failed: " + err.message);
       }
-      setForm(emptyAdmin);
-      setEditingId("");
-      setError("");
     }
 
     function edit(admin) {
@@ -1137,14 +1280,15 @@
     }
 
     async function remove(id) {
-      setData(function (current) {
-        return Object.assign({}, current, { admins: (current.admins || []).filter(function (item) { return item.id !== id; }) });
-      });
+      // Delete from Supabase first — update UI only on success
       try {
         const { error: dbErr } = await supabase.from("admins").delete().eq("id", id);
         if (dbErr) throw new Error(dbErr.message);
+        setData(function (current) {
+          return Object.assign({}, current, { admins: (current.admins || []).filter(function (item) { return item.id !== id; }) });
+        });
       } catch (err) {
-        console.warn("Supabase admin delete failed:", err.message);
+        setError("Delete failed: " + err.message);
       }
     }
 
@@ -1180,7 +1324,6 @@
       h("div", { className: "admin-table-wrap" },
         h("table", null,
           h("thead", null, h("tr", null,
-            h("th", null, "ID"),
             h("th", null, "Username"),
             h("th", null, "Password"),
             h("th", null, "Created"),
@@ -1188,7 +1331,6 @@
           )),
           h("tbody", null, sortedAdmins.map(function (admin) {
             return h("tr", { key: admin.id },
-              h("td", null, admin.id),
               h("td", null, admin.username),
               h("td", { className: "password-cell" },
                 h("span", null, showPasswords[admin.id] ? admin.password : "••••••••"),
@@ -1246,7 +1388,6 @@
       const pwError = validatePassword(form.password);
       if (pwError) { setError(pwError); return; }
       if (!form.username.trim()) { setError("Username is required"); return; }
-      // Check for duplicate username
       const dup = users.find(function (u) {
         return u.username === form.username.trim() && u.id !== editingId;
       });
@@ -1259,24 +1400,24 @@
         role: "user",
         date: editingId ? (users.find(function (u) { return u.id === editingId; }) || {}).date || form.date : nowLabel(),
       };
-      // Optimistic update
-      setData(function (current) {
-        const list = current.users || [];
-        const exists = list.some(function (item) { return item.id === record.id; });
-        const nextList = exists
-          ? list.map(function (item) { return item.id === record.id ? record : item; })
-          : [record].concat(list);
-        return Object.assign({}, current, { users: nextList });
-      });
+      // Write to Supabase FIRST — only update UI on success
       try {
         const { error: dbErr } = await supabase.from("users").upsert(mapUserToDb(record));
         if (dbErr) throw new Error(dbErr.message);
+        setData(function (current) {
+          const list = current.users || [];
+          const exists = list.some(function (item) { return item.id === record.id; });
+          const nextList = exists
+            ? list.map(function (item) { return item.id === record.id ? record : item; })
+            : [record].concat(list);
+          return Object.assign({}, current, { users: nextList });
+        });
+        setForm(emptyUser);
+        setEditingId("");
+        setError("");
       } catch (err) {
-        console.warn("Supabase user write failed:", err.message);
+        setError("Save failed: " + err.message);
       }
-      setForm(emptyUser);
-      setEditingId("");
-      setError("");
     }
 
     function edit(user) {
@@ -1286,14 +1427,15 @@
     }
 
     async function remove(id) {
-      setData(function (current) {
-        return Object.assign({}, current, { users: (current.users || []).filter(function (item) { return item.id !== id; }) });
-      });
+      // Delete from Supabase first — update UI only on success
       try {
         const { error: dbErr } = await supabase.from("users").delete().eq("id", id);
         if (dbErr) throw new Error(dbErr.message);
+        setData(function (current) {
+          return Object.assign({}, current, { users: (current.users || []).filter(function (item) { return item.id !== id; }) });
+        });
       } catch (err) {
-        console.warn("Supabase user delete failed:", err.message);
+        setError("Delete failed: " + err.message);
       }
     }
 
@@ -1329,7 +1471,6 @@
       h("div", { className: "admin-table-wrap" },
         h("table", null,
           h("thead", null, h("tr", null,
-            h("th", null, "ID"),
             h("th", null, "Username"),
             h("th", null, "Password"),
             h("th", null, "Created"),
@@ -1337,7 +1478,6 @@
           )),
           h("tbody", null, sortedUsers.map(function (user) {
             return h("tr", { key: user.id },
-              h("td", null, user.id),
               h("td", null, user.username),
               h("td", { className: "password-cell" },
                 h("span", null, showPasswords[user.id] ? user.password : "••••••••"),
@@ -1360,6 +1500,91 @@
     );
   }
 
+
+  // ── Master Admin Settings (change own username / password) ───────────────
+  function MasterAdminSettings({ masterCreds, onMasterCredsUpdated }) {
+    const [form, setForm] = useState(function() {
+      const c = masterCreds || { username: "masterLead", password: "" };
+      return { username: c.username, password: c.password, confirmPassword: "" };
+    });
+    const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [showPw, setShowPw] = useState(false);
+
+    function update(name, value) {
+      setForm(function(cur) { return Object.assign({}, cur, { [name]: value }); });
+      setError(""); setSuccess("");
+    }
+
+    function submit(e) {
+      e.preventDefault();
+      if (!form.username.trim()) { setError("Username is required"); return; }
+      const pwErr = validatePassword(form.password);
+      if (pwErr) { setError(pwErr); return; }
+      if (form.password !== form.confirmPassword) { setError("Passwords do not match"); return; }
+      setSaving(true);
+      const newCreds = { username: form.username.trim(), password: form.password };
+      saveMasterCredsToDb(newCreds)
+        .then(function() {
+          setSuccess("Master admin credentials saved to Supabase! New credentials take effect immediately.");
+          setError("");
+          if (onMasterCredsUpdated) onMasterCredsUpdated(newCreds);
+        })
+        .catch(function(err) {
+          setError("Failed to save: " + err.message);
+        })
+        .finally(function() { setSaving(false); });
+    }
+
+    return h("section", { className: "admin-card admin-manager-card" },
+      h("div", { className: "panel-title" },
+        h("h2", null, "Master Admin Settings"),
+        h("p", { style: { margin: 0, fontSize: "0.85rem", opacity: 0.6 } }, "Change your own login credentials")
+      ),
+      h("form", { className: "admin-form admin-manager-form", onSubmit: submit },
+        h("label", null, "New Username",
+          h("input", {
+            required: true,
+            placeholder: "Enter new username",
+            value: form.username,
+            onChange: function(e) { update("username", e.target.value); }
+          })
+        ),
+        h("label", null, "New Password",
+          h("div", { style: { position: "relative" } },
+            h("input", {
+              required: true,
+              type: showPw ? "text" : "password",
+              placeholder: "Min 8 chars, mixed case, digit, special",
+              value: form.password,
+              style: { paddingRight: "2.5rem", width: "100%", boxSizing: "border-box" },
+              onChange: function(e) { update("password", e.target.value); }
+            }),
+            h("button", {
+              type: "button",
+              className: "toggle-pw-btn",
+              style: { position: "absolute", right: "0.5rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem" },
+              onClick: function() { setShowPw(function(p) { return !p; }); },
+              title: showPw ? "Hide" : "Show"
+            }, showPw ? "🙈" : "👁")
+          )
+        ),
+        h("label", null, "Confirm Password",
+          h("input", {
+            required: true,
+            type: "password",
+            placeholder: "Re-enter new password",
+            value: form.confirmPassword,
+            onChange: function(e) { update("confirmPassword", e.target.value); }
+          })
+        ),
+        h("button", { className: "primary-button", disabled: saving }, saving ? "Saving…" : "Update My Credentials"),
+        error && h("div", { className: "admin-pw-error" }, error),
+        success && h("div", { className: "admin-pw-success" }, success)
+      )
+    );
+  }
 
   function Appearance({ compact, toggleDensity, onResetDb }) {
     const [notifications, setNotifications] = useState(localStorage.getItem("mumble-notifications") || "Stacked");
@@ -1417,19 +1642,22 @@
 
   function App() {
     const route = useRoute();
-    const [data, setData] = useState(() => ({ transactions: [], settlements: [], admins: [], users: [] }));
+    // data now includes masterCreds from Supabase master_config
+    const [data, setData] = useState(() => ({ transactions: [], settlements: [], admins: [], users: [], masterCreds: null }));
     const [loading, setLoading] = useState(true);
     const [dbError, setDbError] = useState(null);
+    // Session state — stored in localStorage only for tab continuity (not as data cache)
     const [role, setRole] = useState(() => localStorage.getItem("mumble-role") || "");
     const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem("mumble-current-user-id") || "");
     const [selectedClientId, setSelectedClientId] = useState(() => localStorage.getItem("mumble-selected-client-id") || "");
 
-    // Mirror to localStorage whenever data changes (fallback cache)
-    useEffect(() => {
-      localStorage.setItem(dbKey, JSON.stringify(data));
-    }, [data]);
+    // Derive the current user object from loaded data
+    const currentUser = useMemo(function() {
+      if (!currentUserId) return null;
+      return (data.users || []).find(function(u) { return u.id === currentUserId; }) || null;
+    }, [data.users, currentUserId]);
 
-    // Keep role, currentUserId, selectedClientId in sync with local storage
+    // Keep session state in sync with localStorage (tab continuity only)
     useEffect(() => {
       if (role) localStorage.setItem("mumble-role", role);
       else localStorage.removeItem("mumble-role");
@@ -1445,7 +1673,7 @@
       else localStorage.removeItem("mumble-selected-client-id");
     }, [selectedClientId]);
 
-    // Initial fetch from Supabase
+    // Initial fetch from Supabase — no localStorage fallback; Supabase is the single source of truth
     async function refreshData() {
       try {
         const fresh = await fetchAll();
@@ -1453,9 +1681,7 @@
         setDbError(null);
       } catch (err) {
         setDbError(err.message);
-        // Fall back to localStorage cache
-        const cached = loadDb();
-        setData(cached);
+        // On error just keep whatever data we already have in state
       }
     }
 
@@ -1471,6 +1697,7 @@
         .on("postgres_changes", { event: "*", schema: "public", table: "settlements" }, () => refreshData())
         .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, () => refreshData())
         .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => refreshData())
+        .on("postgres_changes", { event: "*", schema: "public", table: "master_config" }, () => refreshData())
         .subscribe();
       return () => supabase.removeChannel(channel);
     }, []);
@@ -1508,9 +1735,13 @@
     }
 
     function resetDb() {
-      const fresh = { transactions: defaultTransactions, settlements: defaultSettlements, admins: data.admins, users: data.users };
-      setData(fresh);
-      localStorage.setItem(dbKey, JSON.stringify(fresh));
+      // Supabase is source of truth — just re-fetch fresh data.
+      refreshData();
+    }
+
+    // Callback when master creds are updated from MasterAdminSettings
+    function onMasterCredsUpdated(newCreds) {
+      setData(function(prev) { return Object.assign({}, prev, { masterCreds: newCreds }); });
     }
 
     // Filter transactions and settlements shown to user/client
@@ -1528,7 +1759,7 @@
 
     // Admin dashboard (both masteradmin and admin land here after login)
     if (normalizedRoute.startsWith("/admin")) {
-      if (!isAdmin) return h(Login, { onLogin: login, admins: data.admins, users: data.users });
+      if (!isAdmin) return h(Login, { onLogin: login, admins: data.admins, users: data.users, masterCreds: data.masterCreds });
       return h(AdminPage, {
         data,
         setData,
@@ -1537,11 +1768,12 @@
         onDismissError: () => setDbError(null),
         role,
         selectedClientId,
-        onSelectClient: setSelectedClientId
+        onSelectClient: setSelectedClientId,
+        onMasterCredsUpdated
       });
     }
 
-    if (!role || normalizedRoute === "/login") return h(Login, { onLogin: login, admins: data.admins, users: data.users });
+    if (!role || normalizedRoute === "/login") return h(Login, { onLogin: login, admins: data.admins, users: data.users, masterCreds: data.masterCreds });
     if (normalizedRoute === "/not-found") return h(NotFound);
 
     return h(Shell, {
@@ -1552,6 +1784,7 @@
       onRefreshData: refreshData,
       dbError,
       onDismissError: () => setDbError(null),
+      currentUser,
     });
   }
 
