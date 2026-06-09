@@ -128,7 +128,21 @@ a {
   place-items: center;
   padding: 24px 16px;
   background: var(--bg-color);
+  transition: background-color 0.4s ease;
 }
+
+.bg-user {
+  background-color: #f0fdf4; /* Light Green */
+}
+
+.bg-admin {
+  background-color: #eff6ff; /* Light Blue */
+}
+
+.bg-masteradmin {
+  background-color: #fffbeb; /* Light Yellow / Gold */
+}
+
 
 /* ─── Role Selector ─────────────────────────────────────────────────────── */
 .role-selector-wrap {
@@ -157,22 +171,46 @@ a {
 .role-display {
   display: flex;
   align-items: center;
-  gap: 16px;
-  font-size: 24px;
+  gap: 12px;
+  font-size: 20px;
   font-family: inherit;
   font-weight: 500;
-  color: var(--ink);
   pointer-events: none;
+  padding: 10px 24px;
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.role-selector:hover .role-display {
+  transform: scale(0.95);
+}
+
+.role-display-user {
+  background-color: #dcfce7;
+  color: #166534;
+  border-color: #15803d;
+}
+
+.role-display-admin {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border-color: #2563eb;
+}
+
+.role-display-masteradmin {
+  background-color: #fef08a;
+  color: #b45309;
+  border-color: #d97706;
 }
 
 .role-chevron {
   display: inline-block;
   width: 18px;
   height: 12px;
-  background-image: url('data:image/svg+xml;utf8,<svg width="18" height="12" viewBox="0 0 18 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 2.5L9 9.5L16 2.5" stroke="%23111" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>');
-  background-repeat: no-repeat;
-  background-position: center;
 }
+
+/* Check if we missed deleting anything from previous role-chevron */
 
 .role-selector select:focus + .role-display {
   text-decoration: underline;
@@ -204,7 +242,12 @@ a {
   margin: 0;
   text-align: center;
   font-size: clamp(20px, 4vw, 26px);
+  transition: color 0.3s ease;
 }
+
+.login-card h2.title-user { color: #166534; }
+.login-card h2.title-admin { color: #1e40af; }
+.login-card h2.title-masteradmin { color: #b45309; }
 
 .login-card p {
   margin: 0 0 16px;
@@ -1968,3 +2011,15 @@ tbody tr:hover td {
 .topbar {
   padding: 0 20px;
 }
+
+.master-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #10b981;
+  margin-right: 8px;
+  box-shadow: 0 0 0 2px #d1fae5;
+  vertical-align: middle;
+}
+

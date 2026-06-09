@@ -11,17 +11,17 @@
 
   // Map Supabase rows (snake_case) → app objects (camelCase)
   function mapTxFromDb(row) {
-    return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001" };
+    return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master };
   }
   function mapStFromDb(row) {
-    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001" };
+    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master };
   }
   // Map app objects → Supabase rows
   function mapTxToDb(r) {
-    return { id: r.id, amount: r.amount, vpa: r.vpa || "", payer: r.payer || "", remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001" };
+    return { id: r.id, amount: r.amount, vpa: r.vpa || "", payer: r.payer || "", remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001", added_by_master: !!r.addedByMaster };
   }
   function mapStToDb(r) {
-    return { id: r.id, amount: r.amount, commission: r.commission, commission_amount: r.commissionAmount, paid: r.paid, remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001" };
+    return { id: r.id, amount: r.amount, commission: r.commission, commission_amount: r.commissionAmount, paid: r.paid, remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001", added_by_master: !!r.addedByMaster };
   }
   // Map admin rows
   function mapAdminFromDb(row) {
@@ -387,7 +387,7 @@
       }
     }
 
-    return h("main", { className: "login-page" },
+    return h("main", { className: cx("login-page", "bg-" + loginRole) },
       h("div", { className: "role-selector-wrap" },
         h("div", { className: "role-selector" },
           h("select", { value: loginRole, onChange: (e) => { setLoginRole(e.target.value); setError(""); } },
@@ -395,16 +395,18 @@
             h("option", { value: "admin" }, "Admin"),
             h("option", { value: "masteradmin" }, "Master Admin")
           ),
-          h("div", { className: "role-display", "aria-hidden": true },
+          h("div", { className: cx("role-display", "role-display-" + loginRole), "aria-hidden": true },
             loginRole === "user" ? "User" : loginRole === "admin" ? "Admin" : "Master Admin",
-            h("span", { className: "role-chevron" })
+            h("svg", { className: "role-chevron", width: "18", height: "12", viewBox: "0 0 18 12", fill: "none", xmlns: "http://www.w3.org/2000/svg" },
+              h("path", { d: "M2 2.5L9 9.5L16 2.5", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round", strokeLinejoin: "round" })
+            )
           )
         )
       ),
       h("form", { className: "login-card", onSubmit: submit },
         h(Logo),
         h("h1", null, appName),
-        h("h2", null, titles[loginRole] || "Sign In"),
+        h("h2", { className: "title-" + loginRole }, titles[loginRole] || "Sign In"),
         h("p", null, subtitles[loginRole] || ""),
         h("label", null, "User ID", h("input", {
           autoComplete: "username",
@@ -688,7 +690,7 @@
             ? h("tr", null, h("td", { colSpan: heads.length, className: "empty-row" }, "No records match the current filters."))
             : table.rows.map((row) => type === "transaction"
                 ? h("tr", { key: row.id },
-                    h("td", { className: "text-green" }, money(row.amount, true)),
+                    h("td", { className: "text-green" }, row.addedByMaster && h("span", { className: "master-dot", title: "Added by Master Admin" }), money(row.amount, true)),
                     h("td", { className: "transaction-id" }, row.id),
                     h("td", null, row.vpa),
                     h("td", null, row.payer),
@@ -696,7 +698,7 @@
                     h("td", null, row.date)
                   )
                 : h("tr", { key: row.id },
-                    h("td", { className: "text-green" }, money(row.amount, false)),
+                    h("td", { className: "text-green" }, row.addedByMaster && h("span", { className: "master-dot", title: "Added by Master Admin" }), money(row.amount, false)),
                     h("td", { className: "transaction-id" }, row.id),
                     h("td", null, row.commission),
                     h("td", { className: "text-orange" }, money(row.commissionAmount, false)),
@@ -1025,7 +1027,13 @@
             (canEdit || canDelete) && h("th", null, "Actions")
           )),
           h("tbody", null, records.map((record) => h("tr", { key: record.id },
-            tableFields.map(([key]) => h("td", { key }, key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key)))),
+            tableFields.map(([key]) => {
+              let val = key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key));
+              if (key === "amount" && record.addedByMaster) {
+                val = h(React.Fragment, null, h("span", { className: "master-dot", title: "Added by Master Admin" }), val);
+              }
+              return h("td", { key }, val);
+            }),
             (canEdit || canDelete) && h("td", { className: "row-actions" },
               canEdit && h("button", { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
               canDelete && h("button", { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
@@ -1101,6 +1109,9 @@
 
     async function saveRecord(kind, record, editingId) {
       const prepared = Object.assign({}, record, { clientId: record.clientId || selectedClientId || "usr-001" });
+      if (isMaster && !editingId) {
+        prepared.addedByMaster = true;
+      }
       const table = kind === "transactions" ? "transactions" : "settlements";
       const dbRecord = kind === "transactions" ? mapTxToDb(prepared) : mapStToDb(prepared);
       // Optimistic update
