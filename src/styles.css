@@ -768,6 +768,7 @@ input:focus, select:focus {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
   align-items: end;
+  margin-bottom: 32px;
 }
 
 .control-actions {
@@ -1760,13 +1761,26 @@ tbody tr:hover td {
 .tx-dot { background: #1a73e8; }
 .st-dot { background: #e8790a; }
 
-/* User-side panel borders */
+/* User-side panel borders & animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .panel-tx {
-  border-top: 3px solid #1a73e8;
+  border-top: 4px solid #1a73e8;
+  padding: clamp(24px, 5vw, 40px);
+  margin-bottom: 24px;
+  box-shadow: 0 8px 24px rgba(26, 115, 232, 0.08);
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 
 .panel-st {
-  border-top: 3px solid #e8790a;
+  border-top: 4px solid #e8790a;
+  padding: clamp(24px, 5vw, 40px);
+  margin-bottom: 24px;
+  box-shadow: 0 8px 24px rgba(232, 121, 10, 0.08);
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.1s backwards;
 }
 
 /* Admin CrudManager section borders */
@@ -1787,11 +1801,13 @@ tbody tr:hover td {
 .page-client-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 20px;
-  border-radius: 8px;
-  margin-bottom: 14px;
+  gap: 12px;
+  padding: 14px 24px;
+  border-radius: 12px;
+  margin-bottom: 24px;
   flex-wrap: wrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) backwards;
 }
 
 .tx-banner {

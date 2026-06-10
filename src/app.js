@@ -473,8 +473,7 @@
       h("aside", { className: "sidebar" },
         h("h1", null, isSettings ? "Settings" : appName),
         h("div", { className: "sidebar-user-chip" },
-          h("span", { className: "sidebar-user-name" }, displayName),
-          currentUser && h("span", { className: "sidebar-user-id" }, currentUser.id)
+          h("span", { className: "sidebar-user-name" }, displayName)
         ),
         isSettings
           ? h(React.Fragment, null,
@@ -493,8 +492,7 @@
       ),
       h("header", { className: "topbar" },
         h("div", { className: "topbar-user" },
-          h("span", { className: "topbar-username" }, displayName),
-          currentUser && h("span", { className: "topbar-userid" }, currentUser.id)
+          h("span", { className: "topbar-username" }, displayName)
         ),
         h("button", { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, initials)
       ),
@@ -519,8 +517,7 @@
       h("div", { className: "profile-head" },
         h("div", { className: "profile-pic" }, initials),
         h("div", { className: "profile-head-info" },
-          h("span", { className: "profile-display-name" }, displayName),
-          currentUser && h("span", { className: "profile-user-id" }, currentUser.id)
+          h("span", { className: "profile-display-name" }, displayName)
         )
       ),
       h("button", { onClick: () => navigate("/dashboards/userRole/settlement") },
@@ -560,8 +557,7 @@
       h("div", { className: "home-title" },
         h("div", { className: "home-user-badge" },
           h("span", { className: "home-welcome" }, "Welcome back,"),
-          h("strong", { className: "home-username" }, displayName),
-          userId && h("span", { className: "home-userid" }, userId)
+          h("strong", { className: "home-username" }, displayName)
         ),
         h("h2", null, "Payment and settlement control panel"),
         h("button", {
@@ -614,10 +610,6 @@
   }
 
   function Controls({ table, showQuery, onDownload, onRefreshData }) {
-    function handleRefresh() {
-      table.refresh();
-      if (onRefreshData) onRefreshData();
-    }
     return h("div", { className: "search-grid" },
       h("label", null, "Amount", h("input", {
         inputMode: "numeric",
@@ -637,8 +629,6 @@
       })),
       h("label", null, "Date Range", h("input", { value: "2026-05-04 to 2026-06-04", readOnly: true })),
       h("div", { className: "control-actions" },
-        h("button", { className: "primary-button", onClick: handleRefresh }, "Refresh"),
-        h("button", { className: "secondary-button", onClick: table.clear }, "Clear"),
         h("button", { className: "secondary-button", onClick: onDownload }, "Download Sheet")
       )
     );
@@ -680,7 +670,7 @@
   function DataTable({ type, table }) {
     const heads = type === "transaction"
       ? [["Amount", "amount"], ["Transaction Id", "id"], ["VPA", "vpa"], ["Payer Name", "payer"], ["Remark", "remark"], ["Entry Date", "date"]]
-      : [["Amount", "amount"], ["Transaction Id", "id"], ["Commission", "commission"], ["Commission Amount", "commissionAmount"], ["Paid Amount", "paid"], ["Remark", "remark"], ["Entry Date", "date"]];
+      : [["Amount", "amount"], ["Transaction Id", "id"], ["Commission", "commission"], ["Paid Amount", "paid"], ["Remark", "remark"], ["Entry Date", "date"]];
 
     return h("div", { className: "table-wrap" },
       h("table", null,
@@ -690,7 +680,7 @@
             ? h("tr", null, h("td", { colSpan: heads.length, className: "empty-row" }, "No records match the current filters."))
             : table.rows.map((row) => type === "transaction"
                 ? h("tr", { key: row.id },
-                    h("td", { className: "text-green" }, row.addedByMaster && h("span", { className: "master-dot", title: "Added by Master Admin" }), money(row.amount, true)),
+                    h("td", { className: "text-green" }, money(row.amount, true)),
                     h("td", { className: "transaction-id" }, row.id),
                     h("td", null, row.vpa),
                     h("td", null, row.payer),
@@ -698,10 +688,9 @@
                     h("td", null, row.date)
                   )
                 : h("tr", { key: row.id },
-                    h("td", { className: "text-green" }, row.addedByMaster && h("span", { className: "master-dot", title: "Added by Master Admin" }), money(row.amount, false)),
+                    h("td", { className: "text-green" }, money(row.amount, false)),
                     h("td", { className: "transaction-id" }, row.id),
                     h("td", null, row.commission),
-                    h("td", { className: "text-orange" }, money(row.commissionAmount, false)),
                     h("td", { className: "text-red" }, money(row.paid, true)),
                     h("td", null, row.remark || "—"),
                     h("td", null, row.date)
@@ -744,8 +733,7 @@
       h(Breadcrumb, { current: mode === "recent" ? "Recent Transactions" : "Transaction History" }),
       currentUser && h("div", { className: "page-client-banner tx-banner" },
         h("span", { className: "page-client-label" }, "Viewing data for"),
-        h("strong", { className: "page-client-name" }, currentUser.username),
-        h("span", { className: "page-client-id" }, currentUser.id)
+        h("strong", { className: "page-client-name" }, currentUser.username)
       ),
       h("div", { className: "panel panel-tx" },
         h("div", { className: "panel-title" },
@@ -815,8 +803,7 @@
       h(Breadcrumb, { current: mode === "recent" ? "Recent Settlements" : "Settlement History" }),
       currentUser && h("div", { className: "page-client-banner st-banner" },
         h("span", { className: "page-client-label" }, "Viewing data for"),
-        h("strong", { className: "page-client-name" }, currentUser.username),
-        h("span", { className: "page-client-id" }, currentUser.id)
+        h("strong", { className: "page-client-name" }, currentUser.username)
       ),
       h("div", { className: "panel panel-st" },
         h("div", { className: "panel-title" },
@@ -1029,9 +1016,10 @@
           h("tbody", null, records.map((record) => h("tr", { key: record.id },
             tableFields.map(([key]) => {
               let val = key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key));
-              if (key === "amount" && record.addedByMaster) {
-                val = h(React.Fragment, null, h("span", { className: "master-dot", title: "Added by Master Admin" }), val);
-              }
+              // Hide dot for now
+              // if (key === "amount" && record.addedByMaster) {
+              //   val = h(React.Fragment, null, h("span", { className: "master-dot", title: "Added by Master Admin" }), val);
+              // }
               return h("td", { key }, val);
             }),
             (canEdit || canDelete) && h("td", { className: "row-actions" },
