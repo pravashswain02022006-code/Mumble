@@ -11,17 +11,17 @@
 
   // Map Supabase rows (snake_case) → app objects (camelCase)
   function mapTxFromDb(row) {
-    return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master };
+    return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master, isDeleted: !!row.is_deleted, deletedAt: row.deleted_at || "", editHistory: row.edit_history || [] };
   }
   function mapStFromDb(row) {
-    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master };
+    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master, isDeleted: !!row.is_deleted, deletedAt: row.deleted_at || "", editHistory: row.edit_history || [] };
   }
   // Map app objects → Supabase rows
   function mapTxToDb(r) {
-    return { id: r.id, amount: r.amount, vpa: r.vpa || "", payer: r.payer || "", remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001", added_by_master: !!r.addedByMaster };
+    return { id: r.id, amount: Number(r.amount || 0), vpa: r.vpa, payer: r.payer, remark: r.remark, date: r.date, client_id: r.clientId, added_by_master: !!r.addedByMaster, edit_history: r.editHistory || [] };
   }
   function mapStToDb(r) {
-    return { id: r.id, amount: r.amount, commission: r.commission, commission_amount: r.commissionAmount, paid: r.paid, remark: r.remark || "", date: r.date, client_id: r.clientId || "usr-001", added_by_master: !!r.addedByMaster };
+    return { id: r.id, amount: Number(r.amount || 0), commission: r.commission, commission_amount: Number(r.commissionAmount || 0), paid: Number(r.paid || 0), remark: r.remark, date: r.date, client_id: r.clientId, added_by_master: !!r.addedByMaster, edit_history: r.editHistory || [] };
   }
   // Map admin rows
   function mapAdminFromDb(row) {
@@ -60,26 +60,41 @@
       supabase.from("admins").select("*"),
       supabase.from("users").select("*"),
     ]);
-    // All four data tables must be readable — throw immediately on any error
     if (txRes.error)  throw new Error("transactions: " + txRes.error.message);
     if (stRes.error)  throw new Error("settlements: " + stRes.error.message);
     if (admRes.error) throw new Error("admins: " + admRes.error.message);
     if (usrRes.error) throw new Error("users: " + usrRes.error.message);
 
-    // master_config — fetch separately so it never crashes the whole app
-    // (table may not exist yet until Supabase SQL is run)
     let masterRow = { username: "masterLead", password: "Mumb!e@999" };
     try {
       const masterRes = await supabase.from("master_config").select("*").eq("id", "master").single();
       if (masterRes.data) masterRow = masterRes.data;
     } catch (_) {}
 
+    // Audit log — optional, only if table exists
+    let auditLog = [];
+    try {
+      const auditRes = await supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(200);
+      if (!auditRes.error) auditLog = auditRes.data || [];
+    } catch (_) {}
+
+    // Separate soft-deleted records (if is_deleted column exists)
+    const allTx  = (txRes.data  || []).map(mapTxFromDb);
+    const allSt  = (stRes.data  || []).map(mapStFromDb);
+    const liveTx = allTx.filter(r => !r.isDeleted);
+    const liveSt = allSt.filter(r => !r.isDeleted);
+    const deletedTx = allTx.filter(r => r.isDeleted);
+    const deletedSt = allSt.filter(r => r.isDeleted);
+
     return {
-      transactions:  (txRes.data || []).map(mapTxFromDb),
-      settlements:   (stRes.data || []).map(mapStFromDb),
+      transactions:  liveTx,
+      settlements:   liveSt,
+      deletedTransactions: deletedTx,
+      deletedSettlements:  deletedSt,
       admins:        (admRes.data || []).map(mapAdminFromDb),
       users:         (usrRes.data || []).map(mapUserFromDb),
       masterCreds:   { username: masterRow.username, password: masterRow.password },
+      auditLog,
     };
   }
 
@@ -208,6 +223,211 @@
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  // ── Parse the stored date string into a JS timestamp ───────────────────────
+  function parseDateLabel(str) {
+    const cleaned = String(str || "").replace(" at ", " ").replace(/(\d+)(st|nd|rd|th)/, "$1");
+    const ts = Date.parse(cleaned);
+    return isNaN(ts) ? null : ts;
+  }
+
+  // ── Date-range download modal ───────────────────────────────────────────────
+  function DateRangeModal({ onClose, onDownload, label }) {
+    const today = new Date().toISOString().slice(0, 10);
+    const [from, setFrom] = useState("");
+    const [to, setTo]     = useState(today);
+    const [err, setErr]   = useState("");
+
+    function handleDownload() {
+      if (!from) { setErr("Please select a From date."); return; }
+      if (!to)   { setErr("Please select a To date.");   return; }
+      if (from > to) { setErr("From date must be before To date."); return; }
+      onDownload(from, to);
+      onClose();
+    }
+
+    return h("div", { className: "drm-overlay", onClick: (e) => { if (e.target === e.currentTarget) onClose(); } },
+      h("div", { className: "drm-box" },
+        h("div", { className: "drm-header" },
+          h("h3", null, "\uD83D\uDCE5 Download " + label),
+          h("button", { className: "drm-close", onClick: onClose }, "\u2715")
+        ),
+        h("p", { className: "drm-sub" }, "Select a date range to export records as an Excel-compatible sheet."),
+        h("div", { className: "drm-fields" },
+          h("label", null, "From date",
+            h("input", { type: "date", value: from, max: to || today, onChange: (e) => { setFrom(e.target.value); setErr(""); } })
+          ),
+          h("label", null, "To date",
+            h("input", { type: "date", value: to, min: from, max: today, onChange: (e) => { setTo(e.target.value); setErr(""); } })
+          )
+        ),
+        err && h("p", { className: "drm-error" }, err),
+        h("div", { className: "drm-actions" },
+          h("button", { className: "secondary-button", onClick: onClose }, "Cancel"),
+          h("button", { className: "primary-button", onClick: handleDownload }, "\u2B07 Download")
+        )
+      )
+    );
+  }
+
+  // ── Universal Search (master admin only) ────────────────────────────────────
+  function UniversalSearch({ transactions, settlements, users, onSelectClient }) {
+    const [query, setQuery] = useState("");
+    const [open, setOpen] = useState(false);
+    const q = query.trim().toLowerCase();
+
+    const txResults = q.length < 2 ? [] : transactions.filter(r => {
+      return Object.values(r).join(" ").toLowerCase().includes(q);
+    }).slice(0, 5);
+    const stResults = q.length < 2 ? [] : settlements.filter(r => {
+      return Object.values(r).join(" ").toLowerCase().includes(q);
+    }).slice(0, 5);
+    const hasResults = txResults.length > 0 || stResults.length > 0;
+    const CLIENT_COLORS = ["#1d4ed8","#15803d","#a16207","#9d174d","#6d28d9","#c2410c","#0369a1","#334155"];
+    function clientColor(clientId, allUsers) {
+      const idx = (allUsers || []).findIndex(u => u.id === clientId);
+      return CLIENT_COLORS[Math.max(0,idx) % CLIENT_COLORS.length];
+    }
+    function clientName(clientId) {
+      const u = (users || []).find(u => u.id === clientId);
+      return u ? u.username : clientId;
+    }
+
+    return h("div", { className: "universal-search-wrap" },
+      h("div", { className: "universal-search-bar" },
+        h("span", { className: "usearch-icon" }, "\uD83D\uDD0D"),
+        h("input", {
+          className: "usearch-input",
+          placeholder: "Search all clients, transactions, settlements...",
+          value: query,
+          onChange: e => { setQuery(e.target.value); setOpen(true); },
+          onFocus: () => setOpen(true),
+          onBlur: () => setTimeout(() => setOpen(false), 180),
+        })
+      ),
+      open && q.length >= 2 && h("div", { className: "universal-results" },
+        !hasResults && h("p", { className: "ures-empty" }, "No results for \"" + query + "\""),
+        txResults.length > 0 && h("div", null,
+          h("div", { className: "ures-group-label" }, "Transactions"),
+          txResults.map(r => h("button", {
+            key: r.id, className: "ures-item",
+            onMouseDown: () => { onSelectClient(r.clientId); setQuery(""); setOpen(false); }
+          },
+            h("span", { className: "ures-client-chip", style: { background: clientColor(r.clientId, users) } }, clientName(r.clientId)),
+            h("span", { className: "ures-id" }, r.id),
+            h("span", { className: "ures-amount" }, money(r.amount, true))
+          ))
+        ),
+        stResults.length > 0 && h("div", null,
+          h("div", { className: "ures-group-label" }, "Settlements"),
+          stResults.map(r => h("button", {
+            key: r.id, className: "ures-item",
+            onMouseDown: () => { onSelectClient(r.clientId); setQuery(""); setOpen(false); }
+          },
+            h("span", { className: "ures-client-chip", style: { background: clientColor(r.clientId, users) } }, clientName(r.clientId)),
+            h("span", { className: "ures-id" }, r.id),
+            h("span", { className: "ures-amount text-red" }, money(r.paid || r.amount, true))
+          ))
+        )
+      )
+    );
+  }
+
+  // ── Edit History Modal ──────────────────────────────────────────────────────
+  function EditHistoryModal({ record, onClose }) {
+    const history = record.editHistory || [];
+    return h("div", { className: "drm-overlay", onClick: e => { if (e.target === e.currentTarget) onClose(); } },
+      h("div", { className: "drm-box history-modal" },
+        h("div", { className: "drm-header" },
+          h("h3", null, "\uD83D\uDCCB Edit History — " + record.id),
+          h("button", { className: "drm-close", onClick: onClose }, "\u2715")
+        ),
+        history.length === 0
+          ? h("p", { className: "drm-sub" }, "No edit history yet. Edits will appear here after the audit columns are added in Supabase.")
+          : h("div", { className: "history-timeline" },
+              history.slice().reverse().map((entry, i) =>
+                h("div", { key: i, className: "history-entry" },
+                  h("div", { className: "history-meta" },
+                    h("span", { className: "history-actor" }, entry.by || "master"),
+                    h("span", { className: "history-ts" }, entry.at || "")
+                  ),
+                  entry.before && entry.after && h("div", { className: "history-diff" },
+                    Object.keys(entry.after).filter(k => String(entry.before[k]) !== String(entry.after[k])).map(k =>
+                      h("div", { key: k, className: "history-diff-row" },
+                        h("span", { className: "diff-key" }, k),
+                        h("span", { className: "diff-before" }, String(entry.before[k] ?? "")),
+                        h("span", { className: "diff-arrow" }, "→"),
+                        h("span", { className: "diff-after" }, String(entry.after[k] ?? ""))
+                      )
+                    )
+                  )
+                )
+              )
+            ),
+        h("div", { className: "drm-actions" },
+          h("button", { className: "secondary-button", onClick: onClose }, "Close")
+        )
+      )
+    );
+  }
+
+  // ── Activity Feed ───────────────────────────────────────────────────────────
+  function ActivityFeed({ auditLog, users }) {
+    const [filter, setFilter] = useState("all");
+    const [clientFilter, setClientFilter] = useState("");
+    const [open, setOpen] = useState(true);
+    const log = (auditLog || []).filter(e => {
+      if (filter !== "all" && e.action !== filter) return false;
+      if (clientFilter && e.client_id !== clientFilter) return false;
+      return true;
+    });
+    const actionIcon = { add: "\u2795", edit: "\u270F\uFE0F", delete: "\uD83D\uDDD1\uFE0F", restore: "\u21A9\uFE0F" };
+    const actionColor = { add: "#15803d", edit: "#1d4ed8", delete: "#dc2626", restore: "#d97706" };
+    function clientName(id) { const u = (users||[]).find(u=>u.id===id); return u?u.username:id; }
+
+    return h("section", { className: "admin-card activity-feed-card" },
+      h("div", { className: "panel-title" },
+        h("div", { className: "panel-title-left" },
+          h("span", { className: "panel-type-dot", style:{background:"#6d28d9"} }),
+          h("h2", null, "\uD83D\uDD53 Activity Log")
+        ),
+        h("button", { className: "secondary-button", onClick: () => setOpen(o=>!o) }, open ? "\u2303 Collapse" : "\u2304 Expand")
+      ),
+      open && h("div", null,
+        h("div", { className: "feed-filters" },
+          h("select", { value: filter, onChange: e=>setFilter(e.target.value) },
+            h("option", { value: "all" }, "All Actions"),
+            h("option", { value: "add" }, "Add"),
+            h("option", { value: "edit" }, "Edit"),
+            h("option", { value: "delete" }, "Delete"),
+            h("option", { value: "restore" }, "Restore")
+          ),
+          h("select", { value: clientFilter, onChange: e=>setClientFilter(e.target.value) },
+            h("option", { value: "" }, "All Clients"),
+            (users||[]).map(u => h("option", { key: u.id, value: u.id }, u.username))
+          )
+        ),
+        auditLog && auditLog.length === 0
+          ? h("p", { className: "feed-empty" }, "No activity yet. Actions will appear here once the audit_log table is created in Supabase.")
+          : h("div", { className: "feed-list" },
+              log.length === 0
+                ? h("p", { className: "feed-empty" }, "No matching entries.")
+                : log.map((entry, i) =>
+                    h("div", { key: i, className: "feed-entry" },
+                      h("span", { className: "feed-action-badge", style: { background: actionColor[entry.action] || "#6b7280" } },
+                        (actionIcon[entry.action] || "\u2022") + " " + (entry.action || "").toUpperCase()
+                      ),
+                      h("span", { className: "feed-desc" },
+                        (entry.record_type || "") + " " + (entry.record_id || "") +
+                        (entry.client_id ? " — " + clientName(entry.client_id) : "")
+                      ),
+                      h("span", { className: "feed-time" }, new Date(entry.created_at).toLocaleString("en-IN", { day:"numeric",month:"short",hour:"2-digit",minute:"2-digit" }))
+                    )
+                  )
+            )
+      )
+    );
   }
 
   // ── Loading / Error UI ─────────────────────────────────────────────────────
@@ -670,7 +890,7 @@
   function DataTable({ type, table }) {
     const heads = type === "transaction"
       ? [["Amount", "amount"], ["Transaction Id", "id"], ["VPA", "vpa"], ["Payer Name", "payer"], ["Remark", "remark"], ["Entry Date", "date"]]
-      : [["Amount", "amount"], ["Transaction Id", "id"], ["Commission", "commission"], ["Paid Amount", "paid"], ["Remark", "remark"], ["Entry Date", "date"]];
+      : [["Amount", "amount"], ["Transaction Id", "id"], ["Paid Amount", "paid"], ["Remark", "remark"], ["Entry Date", "date"]];
 
     return h("div", { className: "table-wrap" },
       h("table", null,
@@ -690,7 +910,6 @@
                 : h("tr", { key: row.id },
                     h("td", { className: "text-green" }, money(row.amount, false)),
                     h("td", { className: "transaction-id" }, row.id),
-                    h("td", null, row.commission),
                     h("td", { className: "text-red" }, money(row.paid, true)),
                     h("td", null, row.remark || "—"),
                     h("td", null, row.date)
@@ -717,8 +936,19 @@
       setRefreshing(false);
     }
 
-    function download() {
-      const rows = table.allRows.map((row) => ({
+    const [showDlModal, setShowDlModal] = useState(false);
+
+    function download(from, to) {
+      const fromTs = from ? new Date(from).setHours(0, 0, 0, 0) : null;
+      const toTs   = to   ? new Date(to).setHours(23, 59, 59, 999) : null;
+      const source = (from || to) ? table.allRows.filter((row) => {
+        const ts = parseDateLabel(row.date);
+        if (ts === null) return false;
+        if (fromTs && ts < fromTs) return false;
+        if (toTs   && ts > toTs)   return false;
+        return true;
+      }) : table.allRows;
+      const rows = source.map((row) => ({
         Amount: money(row.amount, true),
         "Transaction Id": row.id,
         VPA: row.vpa,
@@ -730,6 +960,7 @@
     }
 
     return h("section", null,
+      showDlModal && h(DateRangeModal, { label: "Transactions", onClose: () => setShowDlModal(false), onDownload: download }),
       h(Breadcrumb, { current: mode === "recent" ? "Recent Transactions" : "Transaction History" }),
       currentUser && h("div", { className: "page-client-banner tx-banner" },
         h("span", { className: "page-client-label" }, "Viewing data for"),
@@ -756,7 +987,8 @@
               disabled: refreshing,
               title: "Refresh from server"
             }, refreshing ? "↺…" : "↺ Refresh"),
-            h(LastUpdated, { table })
+            h(LastUpdated, { table }),
+            h("button", { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download Records")
           )
         ),
         mode === "recent"
@@ -786,20 +1018,30 @@
       setRefreshing(false);
     }
 
-    function download() {
-      const rows = table.allRows.map((row) => ({
+    const [showDlModal, setShowDlModal] = useState(false);
+
+    function download(from, to) {
+      const fromTs = from ? new Date(from).setHours(0, 0, 0, 0) : null;
+      const toTs   = to   ? new Date(to).setHours(23, 59, 59, 999) : null;
+      const source = (from || to) ? table.allRows.filter((row) => {
+        const ts = parseDateLabel(row.date);
+        if (ts === null) return false;
+        if (fromTs && ts < fromTs) return false;
+        if (toTs   && ts > toTs)   return false;
+        return true;
+      }) : table.allRows;
+      const rows = source.map((row) => ({
         Amount: money(row.amount, false),
         "Transaction Id": row.id,
-        Commission: row.commission,
-        "Commission Amount": money(row.commissionAmount, false),
         "Paid Amount": money(row.paid, true),
         Remark: row.remark,
         "Entry Date": row.date,
       }));
-      downloadCsv("mumble-settlements.csv", ["Amount", "Transaction Id", "Commission", "Commission Amount", "Paid Amount", "Remark", "Entry Date"], rows);
+      downloadCsv("mumble-settlements.csv", ["Amount", "Transaction Id", "Paid Amount", "Remark", "Entry Date"], rows);
     }
 
     return h("section", null,
+      showDlModal && h(DateRangeModal, { label: "Settlements", onClose: () => setShowDlModal(false), onDownload: download }),
       h(Breadcrumb, { current: mode === "recent" ? "Recent Settlements" : "Settlement History" }),
       currentUser && h("div", { className: "page-client-banner st-banner" },
         h("span", { className: "page-client-label" }, "Viewing data for"),
@@ -826,14 +1068,14 @@
               disabled: refreshing,
               title: "Refresh from server"
             }, refreshing ? "↺…" : "↺ Refresh"),
-            h(LastUpdated, { table })
+            h(LastUpdated, { table }),
+            h("button", { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download Records")
           )
         ),
         mode === "recent"
           ? h(SummaryStats, { type: "settlement", allTransactions, allSettlements })
-          : h("div", { className: cx("stats history-stats", "four") },
+          : h("div", { className: cx("stats history-stats", "three") },
               h(Stat, { label: "Settlement Count",   value: table.totals.filteredCount + " records", tone: "orange" }),
-              h(Stat, { label: "Commission Amount",  value: money(table.totals.commission, false), tone: "orange" }),
               h(Stat, { label: "Settlement Amount",  value: money(table.totals.paid, false), tone: "green" })
             ),
         h(Controls, { table, showQuery: mode === "history", onDownload: download, onRefreshData }),
@@ -860,7 +1102,7 @@
     return parseFloat((amt * rate).toFixed(2));
   }
 
-  function CrudManager({ type, records, onSave, onDelete, canEdit, canDelete, isMaster, users, showToast }) {
+  function CrudManager({ type, records, deletedRecords, onSave, onDelete, onRestore, canEdit, canDelete, isMaster, users, showToast, onAuditLog }) {
     const emptyTransaction = { clientId: "", amount: "", id: "", vpa: "", payer: "", remark: "", date: nowLabel() };
     const emptySettlement = { clientId: "", amount: "", id: "", commission: "3", paid: "", remark: "", date: nowLabel() };
     const empty = type === "transaction" ? emptyTransaction : emptySettlement;
@@ -868,6 +1110,48 @@
     const [editingId, setEditingId] = useState("");
     const [saveError, setSaveError] = useState("");
     const [saving, setSaving] = useState(false);
+    const [showSuccessAnim, setShowSuccessAnim] = useState(false);
+    const [commissionUnlocked, setCommissionUnlocked] = useState(false);
+    const [showDlModal, setShowDlModal] = useState(false);
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [historyRecord, setHistoryRecord] = useState(null);
+    const [bulkExporting, setBulkExporting] = useState(false);
+
+    const allSelected = records.length > 0 && records.every(r => selectedIds.has(r.id));
+    function toggleSelect(id) { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }
+    function toggleSelectAll() { setSelectedIds(allSelected ? new Set() : new Set(records.map(r => r.id))); }
+
+    function downloadRange(from, to) {
+      const fromTs = from ? new Date(from).setHours(0, 0, 0, 0) : null;
+      const toTs   = to   ? new Date(to).setHours(23, 59, 59, 999) : null;
+      const source = records.filter((row) => {
+        if (!from && !to) return true;
+        const ts = parseDateLabel(row.date);
+        if (ts === null) return false;
+        if (fromTs && ts < fromTs) return false;
+        if (toTs   && ts > toTs)   return false;
+        return true;
+      });
+      const isT = type === "transaction";
+      const headers = isT
+        ? ["Amount", "Transaction Id", "VPA", "Payer Name", "Remark", "Entry Date"]
+        : ["Amount", "Transaction Id", "Paid Amount", "Remark", "Entry Date"];
+      const rows = source.map((row) => isT ? ({
+        Amount: money(row.amount, true),
+        "Transaction Id": row.id,
+        VPA: row.vpa,
+        "Payer Name": row.payer,
+        Remark: row.remark,
+        "Entry Date": row.date,
+      }) : ({
+        Amount: money(row.amount, false),
+        "Transaction Id": row.id,
+        "Paid Amount": money(row.paid, true),
+        Remark: row.remark,
+        "Entry Date": row.date,
+      }));
+      downloadCsv("mumble-" + type + "s.csv", headers, rows);
+    }
 
     const sectionClass = type === "transaction" ? "admin-card admin-card-tx" : "admin-card admin-card-st";
     const typeLabel = type === "transaction" ? "Transaction" : "Settlement";
@@ -903,20 +1187,35 @@
       } else {
         prepared.amount = Number(form.amount || 0);
       }
+      // Always stamp the current time on new records
+      if (!editingId) prepared.date = nowLabel();
       prepared.id = prepared.id.startsWith("#") ? prepared.id : "#" + prepared.id;
       try {
         await onSave(prepared, editingId);
         setForm(empty);
+        const wasEditing = !!editingId;
         setEditingId("");
-        if (showToast) showToast(
-          editingId
-            ? typeLabel + " updated successfully!"
-            : typeLabel + " record added successfully!",
-          "success"
-        );
+        if (!wasEditing) {
+          setShowSuccessAnim(true);
+          setTimeout(() => setShowSuccessAnim(false), 2000);
+          if (onAuditLog) onAuditLog({ action: "add", record_type: type, record_id: prepared.id, client_id: prepared.clientId });
+        } else {
+          if (showToast) showToast(typeLabel + " updated successfully!", "success");
+          if (onAuditLog) onAuditLog({ action: "edit", record_type: type, record_id: prepared.id, client_id: prepared.clientId });
+        }
       } catch (err) {
-        setSaveError("Save failed: " + err.message);
-        if (showToast) showToast("Failed to save " + typeLabel.toLowerCase() + ": " + err.message, "error");
+        let msg = err.message;
+        if (msg.includes("duplicate key value violates unique constraint")) {
+          msg = "Transaction ID already exists. Please check the Transaction ID field.";
+        } else if (msg.includes("null value in column")) {
+          msg = "A required field is missing. Please check all fields.";
+        } else if (msg.includes("invalid input syntax")) {
+          msg = "Invalid format in one of the fields (e.g., amount must be a valid number).";
+        } else if (msg.includes("foreign key constraint")) {
+          msg = "The selected Client does not exist or is invalid.";
+        }
+        setSaveError(msg);
+        if (showToast) showToast("Failed to save: " + msg, "error");
       } finally {
         setSaving(false);
       }
@@ -936,12 +1235,17 @@
     const autoAmount    = type === "settlement" ? (Number(form.paid || 0) + autoCommission) : 0;
 
     return h("section", { className: sectionClass },
+      showDlModal && h(DateRangeModal, { label: typeLabel + "s", onClose: () => setShowDlModal(false), onDownload: downloadRange }),
+      historyRecord && h(EditHistoryModal, { record: historyRecord, onClose: () => setHistoryRecord(null) }),
       h("div", { className: "panel-title" },
         h("div", { className: "panel-title-left" },
           h("span", { className: type === "transaction" ? "panel-type-dot tx-dot" : "panel-type-dot st-dot" }),
           h("h2", null, type === "transaction" ? "Transactions" : "Settlements")
         ),
-        canEdit && editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); setSaveError(""); } }, "Cancel Edit")
+        h("div", { className: "panel-title-right" },
+          h("button", { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download"),
+          canEdit && editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); setSaveError(""); } }, "Cancel Edit")
+        )
       ),
       h("form", { className: cx("admin-form", type === "settlement" && "admin-form-settlement"), onSubmit: submit },
         fields.map(([key, label]) => {
@@ -957,7 +1261,15 @@
           }
           if (key === "commission") {
             return h("label", { key },
-              label,
+              h("span", { className: "commission-label-row" },
+                label,
+                h("button", {
+                  type: "button",
+                  className: "commission-lock-btn",
+                  title: commissionUnlocked ? "Lock commission" : "Unlock to edit commission",
+                  onClick: () => setCommissionUnlocked(u => !u)
+                }, commissionUnlocked ? "🔓 Unlock" : "🔒 Locked")
+              ),
               h("div", { className: "percent-input-wrap" },
                 h("input", {
                   className: "percent-input",
@@ -967,9 +1279,11 @@
                   max: "100",
                   step: "0.01",
                   required: true,
+                  readOnly: !commissionUnlocked,
                   placeholder: "e.g. 3",
                   value: recordValue(form, key),
                   onChange: (e) => {
+                    if (!commissionUnlocked) return;
                     const raw = e.target.value.replace(/[^0-9.]/g, "");
                     update(key, raw);
                   },
@@ -978,8 +1292,36 @@
               )
             );
           }
+          if (key === "date") {
+            return h("label", { key },
+              label,
+              h("input", {
+                value: recordValue(form, key),
+                readOnly: true,
+                className: "calc-field",
+                tabIndex: -1,
+                title: "Date is set automatically to the current time",
+              })
+            );
+          }
+          // UTR / Transaction ID: exactly 12 digits after the '#'
+          if (key === "id") {
+            return h("label", { key }, label, h("input", {
+              required: true,
+              value: recordValue(form, key),
+              inputMode: "numeric",
+              maxLength: 12,
+              pattern: "[0-9]{12}",
+              title: "Must be exactly 12 digits",
+              placeholder: "12-digit UTR number",
+              onChange: (e) => {
+                const raw = e.target.value.replace(/[^0-9]/g, "").slice(0, 12);
+                update(key, raw);
+              },
+            }));
+          }
           return h("label", { key }, label, h("input", {
-            required: key === "amount" || key === "id" || key === "paid",
+            required: key === "amount" || key === "paid",
             value: recordValue(form, key),
             onChange: (e) => update(key, e.target.value),
           }));
@@ -1008,29 +1350,80 @@
         saveError && h("div", { className: "admin-pw-error" }, saveError)
       ),
       h("div", { className: "admin-table-wrap" },
+        isMaster && records.length > 0 && h("div", { className: "bulk-action-bar", style: { display: selectedIds.size > 0 ? "flex" : "none" } },
+          h("span", null, selectedIds.size + " selected"),
+          h("button", { className: "dl-range-btn", onClick: () => {
+            const sel = records.filter(r => selectedIds.has(r.id));
+            const isT = type === "transaction";
+            const headers = isT ? ["Amount","Transaction Id","VPA","Payer Name","Remark","Entry Date"] : ["Amount","Transaction Id","Paid Amount","Remark","Entry Date"];
+            const rows = sel.map(r => isT ? ({Amount:money(r.amount,true),"Transaction Id":r.id,VPA:r.vpa,"Payer Name":r.payer,Remark:r.remark,"Entry Date":r.date}) : ({Amount:money(r.amount,false),"Transaction Id":r.id,"Paid Amount":money(r.paid,true),Remark:r.remark,"Entry Date":r.date}));
+            downloadCsv("mumble-selected-" + type + "s.csv", headers, rows);
+          }}, "⬇ Export Selected"),
+          h("button", { className: "danger-button", onClick: () => {
+            if (window.confirm("Delete " + selectedIds.size + " record(s)?")) {
+              Array.from(selectedIds).forEach(id => onDelete(id));
+              setSelectedIds(new Set());
+            }
+          }}, "🗑 Delete Selected"),
+          h("button", { className: "secondary-button", onClick: () => setSelectedIds(new Set()) }, "Clear")
+        ),
         h("table", null,
           h("thead", null, h("tr", null,
+            isMaster && h("th", null, h("input", { type: "checkbox", checked: allSelected, onChange: toggleSelectAll })),
             tableFields.map((field) => h("th", { key: field[0] }, field[1])),
             (canEdit || canDelete) && h("th", null, "Actions")
           )),
-          h("tbody", null, records.map((record) => h("tr", { key: record.id },
-            tableFields.map(([key]) => {
-              let val = key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key));
-              // Hide dot for now
-              // if (key === "amount" && record.addedByMaster) {
-              //   val = h(React.Fragment, null, h("span", { className: "master-dot", title: "Added by Master Admin" }), val);
-              // }
-              return h("td", { key }, val);
-            }),
-            (canEdit || canDelete) && h("td", { className: "row-actions" },
-              canEdit && h("button", { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
-              canDelete && h("button", { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
-            )
-          )))
+          h("tbody", null, records.map((record) => {
+            const isDeleted = record.isDeleted;
+            const isEdited = record.editHistory && record.editHistory.length > 0;
+            let rowClass = selectedIds.has(record.id) ? "row-selected " : "";
+            if (isDeleted) rowClass += "deleted-row-highlight ";
+            else if (isEdited) rowClass += "edited-row-highlight ";
+
+            return h("tr", { key: record.id, className: rowClass.trim() },
+              isMaster && h("td", null, h("input", { type: "checkbox", checked: selectedIds.has(record.id), onChange: () => toggleSelect(record.id) })),
+              tableFields.map(([key]) => {
+                let val = key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key));
+                return h("td", { key }, val);
+              }),
+              (canEdit || canDelete) && h("td", { className: "row-actions" },
+                isDeleted ? (
+                  isMaster && h("button", { className: "primary-button", onClick: () => onRestore(record.id) }, "Restore")
+                ) : (
+                  h(React.Fragment, null,
+                    isEdited && isMaster && h("button", { className: "secondary-button", onClick: () => setHistoryRecord(record) }, "History"),
+                    canEdit && h("button", { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
+                    canDelete && h("button", { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
+                  )
+                )
+              )
+            );
+          }))
+        )
+      ),
+      showSuccessAnim && h("div", { className: "center-popup-overlay" },
+        h("div", { className: "center-popup-box" },
+          h("div", { className: "center-popup-content" },
+            h("span", { className: "center-popup-icon" }, "🎉"),
+            h("span", null, typeLabel + " successfully added")
+          ),
+          h("div", { className: "center-popup-bar" })
         )
       )
     );
   }
+
+  // Color palette for client avatars
+  const CLIENT_COLORS = [
+    { bg: "#dbeafe", accent: "#1d4ed8" }, // blue
+    { bg: "#dcfce7", accent: "#15803d" }, // green
+    { bg: "#fef9c3", accent: "#a16207" }, // yellow
+    { bg: "#fce7f3", accent: "#9d174d" }, // pink
+    { bg: "#ede9fe", accent: "#6d28d9" }, // purple
+    { bg: "#ffedd5", accent: "#c2410c" }, // orange
+    { bg: "#e0f2fe", accent: "#0369a1" }, // sky
+    { bg: "#f1f5f9", accent: "#334155" }, // slate
+  ];
 
   function ClientSelection({ clients, onSelect, onLogout, role }) {
     return h("main", { className: "client-select-page" },
@@ -1042,13 +1435,23 @@
         h("div", { className: "client-list" },
           clients.length === 0
             ? h("p", { className: "empty-clients" }, "No clients found. Please contact Master Admin to create clients.")
-            : clients.map(c => h("button", {
-                key: c.id,
-                className: "client-select-btn",
-                onClick: () => onSelect(c.id)
-              },
-                h("span", { className: "client-name" }, c.username)
-              ))
+            : clients.map((c, idx) => {
+                const col = CLIENT_COLORS[idx % CLIENT_COLORS.length];
+                const initials = (c.username || "?").split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
+                return h("button", {
+                  key: c.id,
+                  className: "client-select-btn",
+                  style: { borderColor: col.accent, background: col.bg },
+                  onClick: () => onSelect(c.id)
+                },
+                  h("span", { className: "client-avatar", style: { background: col.accent, color: "#fff" } }, initials),
+                  h("span", { className: "client-info" },
+                    h("span", { className: "client-name", style: { color: col.accent } }, c.username),
+                    h("span", { className: "client-id" }, c.id)
+                  ),
+                  h("span", { className: "client-arrow", style: { color: col.accent } }, "→")
+                );
+              })
         ),
         h("div", { className: "client-select-footer" },
           h("button", { className: "secondary-button", onClick: onLogout }, "Logout")
@@ -1061,28 +1464,48 @@
     const [saving, setSaving] = useState(false);
     const isMaster = role === "masteradmin";
     const { toasts, showToast } = useToast();
+    const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("mumble-sidebar") === "1");
+
+    function toggleSidebar() {
+      setSidebarOpen(prev => {
+        const next = !prev;
+        localStorage.setItem("mumble-sidebar", next ? "1" : "0");
+        return next;
+      });
+    }
 
     const sortedTransactions = useMemo(() => {
-      return (data.transactions || [])
+      const list = isMaster ? [...(data.transactions || []), ...(data.deletedTransactions || [])] : (data.transactions || []);
+      return list
         .filter((t) => isMaster ? (!selectedClientId || t.clientId === selectedClientId) : t.clientId === selectedClientId)
         .slice()
-        .sort((a, b) => {
-          const aVal = sortableValue(a, "date");
-          const bVal = sortableValue(b, "date");
-          return bVal - aVal;
-        });
-    }, [data.transactions, selectedClientId, isMaster]);
+        .sort((a, b) => { const aVal = sortableValue(a, "date"); const bVal = sortableValue(b, "date"); return bVal - aVal; });
+    }, [data.transactions, data.deletedTransactions, selectedClientId, isMaster]);
 
     const sortedSettlements = useMemo(() => {
-      return (data.settlements || [])
+      const list = isMaster ? [...(data.settlements || []), ...(data.deletedSettlements || [])] : (data.settlements || []);
+      return list
         .filter((s) => isMaster ? (!selectedClientId || s.clientId === selectedClientId) : s.clientId === selectedClientId)
         .slice()
-        .sort((a, b) => {
-          const aVal = sortableValue(a, "date");
-          const bVal = sortableValue(b, "date");
-          return bVal - aVal;
-        });
-    }, [data.settlements, selectedClientId, isMaster]);
+        .sort((a, b) => { const aVal = sortableValue(a, "date"); const bVal = sortableValue(b, "date"); return bVal - aVal; });
+    }, [data.settlements, data.deletedSettlements, selectedClientId, isMaster]);
+
+    // Global totals across ALL clients (master admin only)
+    const globalTxTotal = useMemo(() => (data.transactions || []).reduce((s, t) => s + Number(t.amount || 0), 0), [data.transactions]);
+    const globalStTotal = useMemo(() => (data.settlements || []).reduce((s, t) => s + Number(t.amount || 0), 0), [data.settlements]);
+    const globalBalance = globalTxTotal - globalStTotal;
+
+    // Per-client health data
+    const clientHealth = useMemo(() => {
+      return (data.users || []).map(u => {
+        const cTx = (data.transactions || []).filter(t => t.clientId === u.id);
+        const cSt = (data.settlements || []).filter(s => s.clientId === u.id);
+        const cTxTotal = cTx.reduce((s, t) => s + Number(t.amount || 0), 0);
+        const cStTotal = cSt.reduce((s, t) => s + Number(t.amount || 0), 0);
+        const lastTx = cTx.slice().sort((a, b) => sortableValue(b, "date") - sortableValue(a, "date"))[0];
+        return { user: u, txTotal: cTxTotal, stTotal: cStTotal, balance: cTxTotal - cStTotal, lastTx };
+      });
+    }, [data.users, data.transactions, data.settlements]);
 
     if (!selectedClientId && !isMaster) {
       return h(ClientSelection, {
@@ -1100,11 +1523,21 @@
       if (isMaster && !editingId) {
         prepared.addedByMaster = true;
       }
+      if (editingId) {
+        // Push edit history without creating a circular reference
+        const oldRecord = (data[kind] || []).find(r => r.id === editingId);
+        if (oldRecord) {
+          const snapshot = Object.assign({}, prepared);
+          delete snapshot.editHistory; // Prevent circular JSON
+          const entry = { at: new Date().toISOString(), by: "masteradmin", before: oldRecord, after: snapshot };
+          prepared.editHistory = (oldRecord.editHistory || []).concat([entry]);
+        }
+      }
       const table = kind === "transactions" ? "transactions" : "settlements";
       const dbRecord = kind === "transactions" ? mapTxToDb(prepared) : mapStToDb(prepared);
       // Optimistic update
       setData((current) => {
-        const list = current[kind];
+        const list = current[kind] || [];
         const exists = list.some((item) => item.id === editingId || item.id === prepared.id);
         const nextList = exists
           ? list.map((item) => item.id === (editingId || prepared.id) ? prepared : item)
@@ -1124,28 +1557,160 @@
 
     async function deleteRecord(kind, id) {
       const table = kind === "transactions" ? "transactions" : "settlements";
-      setData((current) => Object.assign({}, current, { [kind]: current[kind].filter((item) => item.id !== id) }));
+      // Try soft delete first (requires is_deleted column); fall back to hard delete
       try {
-        const { error } = await supabase.from(table).delete().eq("id", id);
-        if (error) throw new Error(error.message);
-        showToast("Record deleted successfully", "success");
-      } catch (err) {
-        console.warn("Supabase delete failed:", err.message);
-        showToast("Delete failed: " + err.message, "error");
+        const { error: softErr } = await supabase.from(table)
+          .update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: "masteradmin" })
+          .eq("id", id);
+        if (softErr && softErr.message.includes("is_deleted")) {
+          // Column doesn't exist yet — do a hard delete
+          await supabase.from(table).delete().eq("id", id);
+        }
+      } catch (_) {
+        await supabase.from(table).delete().eq("id", id);
       }
+      setData(current => Object.assign({}, current, { [kind]: current[kind].filter(item => item.id !== id) }));
+      showToast("Record deleted", "success");
+      // Insert audit log
+      try { await supabase.from("audit_log").insert({ action: "delete", record_type: kind.slice(0, -1), record_id: id, performed_by: "masteradmin" }); } catch (_) {}
     }
 
+    async function restoreRecord(kind, id) {
+      const table = kind === "transactions" ? "transactions" : "settlements";
+      try {
+        await supabase.from(table).update({ is_deleted: false, deleted_at: null, deleted_by: null }).eq("id", id);
+        setData(current => {
+          const deleted = (current[(kind === "transactions" ? "deletedTransactions" : "deletedSettlements")] || []);
+          const restored = deleted.find(r => r.id === id);
+          if (!restored) return current;
+          const live = [{ ...restored, isDeleted: false }].concat(current[kind] || []);
+          return Object.assign({}, current, {
+            [kind]: live,
+            [(kind === "transactions" ? "deletedTransactions" : "deletedSettlements")]: deleted.filter(r => r.id !== id)
+          });
+        });
+        showToast("Record restored!", "success");
+        try { await supabase.from("audit_log").insert({ action: "restore", record_type: kind.slice(0, -1), record_id: id, performed_by: "masteradmin" }); } catch (_) {}
+      } catch (err) { showToast("Restore failed: " + err.message, "error"); }
+    }
+
+    async function addAuditLog(entry) {
+      try { await supabase.from("audit_log").insert(Object.assign({ performed_by: "masteradmin" }, entry)); } catch (_) {}
+    }
+
+    // Global stats strip for master admin
+    const globalStats = isMaster && h("div", { className: "master-global-stats" },
+      h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDCB3 Grand Transactions"), h("strong", { className: "text-green" }, money(globalTxTotal, true))),
+      h("div", { className: "mgs-card" }, h("span", null, "\u20B9 Grand Settlements"), h("strong", { className: "text-orange" }, money(globalStTotal, true))),
+      h("div", { className: "mgs-card" }, h("span", null, "\u2696 Grand Balance"), h("strong", { className: "text-red" }, money(globalBalance, true))),
+      h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDC65 Clients"), h("strong", null, (data.users || []).length))
+    );
+
+    // Client health strip
+    const healthStrip = isMaster && h("div", { className: "client-health-strip" },
+      clientHealth.map((ch, idx) => {
+        const col = CLIENT_COLORS[idx % CLIENT_COLORS.length];
+        const initials = (ch.user.username || "?").slice(0, 2).toUpperCase();
+        return h("button", {
+          key: ch.user.id,
+          className: cx("client-health-card", selectedClientId === ch.user.id && "chc-active"),
+          style: { borderColor: col.accent },
+          onClick: () => onSelectClient(ch.user.id)
+        },
+          h("div", { className: "chc-top" },
+            h("span", { className: "chc-avatar", style: { background: col.accent } }, initials),
+            h("div", null,
+              h("strong", { className: "chc-name" }, ch.user.username),
+              ch.lastTx && h("span", { className: "chc-last" }, "Last: " + ch.lastTx.date.slice(0, 20))
+            )
+          ),
+          h("div", { className: "chc-stats" },
+            h("span", { className: "text-green" }, money(ch.txTotal, true)),
+            h("span", { className: "chc-sep" }, "|"),
+            h("span", { className: "text-red" }, money(ch.balance, true))
+          )
+        );
+      })
+    );
+
+    // Quick Action Sidebar
+    const quickSidebar = isMaster && h(React.Fragment, null,
+      h("button", { className: "sidebar-toggle-btn", onClick: toggleSidebar, title: sidebarOpen ? "Close Sidebar" : "Quick Actions" },
+        sidebarOpen ? "\u00D7" : "\u26A1"
+      ),
+      sidebarOpen && h("div", { className: "quick-sidebar" },
+        h("div", { className: "qs-header" },
+          h("h3", null, "\u26A1 Quick Actions"),
+          h("button", { className: "drm-close", onClick: toggleSidebar }, "\u00D7")
+        ),
+        h("div", { className: "qs-section" },
+          h("p", { className: "qs-label" }, "Switch Client"),
+          h("select", {
+            className: "secondary-button qs-select",
+            value: selectedClientId,
+            onChange: e => onSelectClient(e.target.value)
+          },
+            h("option", { value: "" }, "All Clients"),
+            (data.users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
+          )
+        ),
+        h("div", { className: "qs-section" },
+          h("p", { className: "qs-label" }, "Stats Overview"),
+          h("div", { className: "qs-stats" },
+            h("div", null, h("span", null, "TX Total"), h("strong", { className: "text-green" }, money(globalTxTotal, true))),
+            h("div", null, h("span", null, "ST Total"), h("strong", { className: "text-orange" }, money(globalStTotal, true))),
+            h("div", null, h("span", null, "Balance"), h("strong", { className: "text-red" }, money(globalBalance, true)))
+          )
+        )
+      )
+    );
     const txTotal = sortedTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
     const stTotal = sortedSettlements.reduce((sum, s) => sum + Number(s.amount || 0), 0);
     const balance = txTotal - stTotal;
 
+    // Working-day window: 5AM → next day 5AM
+    // If current time is before 5AM, working day started yesterday at 5AM
+    const now = new Date();
+    const workDayStart = new Date(now);
+    workDayStart.setSeconds(0, 0);
+    workDayStart.setMinutes(0);
+    workDayStart.setHours(5);
+    if (now.getHours() < 5) {
+      workDayStart.setDate(workDayStart.getDate() - 1);
+    }
+    const workDayEnd = new Date(workDayStart);
+    workDayEnd.setDate(workDayEnd.getDate() + 1); // +24h
+    const todayTxs = sortedTransactions.filter((t) => {
+      const cleaned = String(t.date || "").replace(" at ", " ").replace(/(\d+)(st|nd|rd|th)/, "$1");
+      const ts = Date.parse(cleaned);
+      if (isNaN(ts)) return false;
+      return ts >= workDayStart.getTime() && ts < workDayEnd.getTime();
+    });
+    const todayTxTotal = todayTxs.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
     const summaryCards = (!isMaster || selectedClientId) ? h("div", { className: "admin-summary-cards" },
       h("div", { className: "admin-stat-card stat-card-tx" }, h("h3", null, "Total Transactions"), h("p", { className: "text-green" }, money(txTotal, true))),
       h("div", { className: "admin-stat-card stat-card-st" }, h("h3", null, "Total Settlements"), h("p", { className: "text-orange" }, money(stTotal, true))),
-      h("div", { className: "admin-stat-card stat-card-bal" }, h("h3", null, "Balance Amount"), h("p", { className: "text-red" }, money(balance, true)))
+      h("div", { className: "admin-stat-card stat-card-bal" }, h("h3", null, "Balance Amount"), h("p", { className: "text-red" }, money(balance, true))),
+      h("div", { className: "admin-stat-card stat-card-today" },
+        h("h3", null, "Today's Working Day"),
+        h("p", { className: "text-green" }, money(todayTxTotal, true)),
+        h("div", { className: "today-meta" },
+          h("span", { className: "today-badge" }, todayTxs.length + " txn" + (todayTxs.length !== 1 ? "s" : "")),
+          h("span", { className: "today-window" },
+            "⏱ " +
+            workDayStart.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) +
+            " → " +
+            workDayEnd.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) +
+            ", " + workDayEnd.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+          )
+        ),
+        h("p", { className: "today-reset-note" }, "🔄 Resets tomorrow at 5:00 AM")
+      )
     ) : null;
 
-    return h("main", { className: "admin-page" },
+    return h("main", { className: cx("admin-page", sidebarOpen && "with-sidebar") },
+      quickSidebar,
       h(ToastContainer, { toasts }),
       h("header", { className: "admin-header" },
         h("div", null, h(Logo), h("div", null,
@@ -1153,6 +1718,7 @@
           h("h1", null, isMaster ? "Master Admin Control" : "Admin Panel")
         )),
         h("div", { className: "admin-header-actions" },
+          isMaster && h(UniversalSearch, { transactions: data.transactions || [], settlements: data.settlements || [], users: data.users || [], onSelectClient }),
           isMaster && h("select", {
             className: "secondary-button client-dropdown",
             value: selectedClientId,
@@ -1165,41 +1731,52 @@
             h("span", { className: "client-info-label" }, "Client:"),
             h("strong", { className: "client-info-name" }, clientObj.username || "None")
           ),
-          !isMaster && h("button", { className: "secondary-button switch-client-btn", onClick: () => onSelectClient("") }, "Switch Client"),
+          !isMaster && h("button", { className: "switch-client-btn", onClick: () => onSelectClient("") },
+            h("span", { className: "scb-label" }, "\u21C4 Switch Client")
+          ),
           isMaster && h("span", { className: "role-badge master" }, "Master Admin"),
           !isMaster && h("span", { className: "role-badge" }, "Admin"),
-          saving && h("span", { className: "saving-indicator" }, "Saving…"),
+          saving && h("span", { className: "saving-indicator" }, "Saving\u2026"),
           h("button", { className: "secondary-button", onClick: () => onLogout() }, "User Portal"),
           h("button", { className: "primary-button", onClick: onLogout }, "Logout")
         )
       ),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
+      isMaster && globalStats,
+      isMaster && healthStrip,
       summaryCards,
       h("div", { className: "admin-grid" },
         h(CrudManager, {
           type: "transaction",
           records: sortedTransactions,
+          deletedRecords: data.deletedTransactions || [],
           onSave: (record, editingId) => saveRecord("transactions", record, editingId),
           onDelete: (id) => deleteRecord("transactions", id),
+          onRestore: isMaster ? (id) => restoreRecord("transactions", id) : null,
           canEdit: isMaster,
           canDelete: isMaster,
           isMaster,
           users: data.users || [],
-          showToast
+          showToast,
+          onAuditLog: isMaster ? addAuditLog : null
         }),
         h(CrudManager, {
           type: "settlement",
           records: sortedSettlements,
+          deletedRecords: data.deletedSettlements || [],
           onSave: (record, editingId) => saveRecord("settlements", record, editingId),
           onDelete: (id) => deleteRecord("settlements", id),
+          onRestore: isMaster ? (id) => restoreRecord("settlements", id) : null,
           canEdit: isMaster,
           canDelete: isMaster,
           isMaster,
           users: data.users || [],
-          showToast
+          showToast,
+          onAuditLog: isMaster ? addAuditLog : null
         }),
         isMaster && h(AdminManager, { admins: data.admins || [], setData }),
         isMaster && h(UserManager, { users: data.users || [], setData }),
+        isMaster && h(ActivityFeed, { auditLog: data.auditLog || [], users: data.users || [] }),
         isMaster && h(MasterAdminSettings, { masterCreds: data.masterCreds, onMasterCredsUpdated })
       )
     );
@@ -1697,6 +2274,7 @@
         .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, () => refreshData())
         .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => refreshData())
         .on("postgres_changes", { event: "*", schema: "public", table: "master_config" }, () => refreshData())
+        .on("postgres_changes", { event: "*", schema: "public", table: "audit_log" }, () => refreshData())
         .subscribe();
       return () => supabase.removeChannel(channel);
     }, []);
