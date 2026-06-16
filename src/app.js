@@ -1320,6 +1320,16 @@
               },
             }));
           }
+          if (key === "clientId") {
+            return h("label", { key }, label, h("select", {
+              required: true,
+              value: recordValue(form, key),
+              onChange: (e) => update(key, e.target.value)
+            },
+              h("option", { value: "", disabled: true }, "Select a Client"),
+              (users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
+            ));
+          }
           return h("label", { key }, label, h("input", {
             required: key === "amount" || key === "paid",
             value: recordValue(form, key),
@@ -1446,8 +1456,7 @@
                 },
                   h("span", { className: "client-avatar", style: { background: col.accent, color: "#fff" } }, initials),
                   h("span", { className: "client-info" },
-                    h("span", { className: "client-name", style: { color: col.accent } }, c.username),
-                    h("span", { className: "client-id" }, c.id)
+                    h("span", { className: "client-name", style: { color: col.accent } }, c.username)
                   ),
                   h("span", { className: "client-arrow", style: { color: col.accent } }, "→")
                 );
