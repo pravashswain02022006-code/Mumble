@@ -1490,16 +1490,24 @@
         .sort((a, b) => { const aVal = sortableValue(a, "date"); const bVal = sortableValue(b, "date"); return bVal - aVal; });
     }, [data.settlements, data.deletedSettlements, selectedClientId, isMaster]);
 
-    // Global totals across ALL clients (master admin only)
-    const globalTxTotal = useMemo(() => (data.transactions || []).reduce((s, t) => s + Number(t.amount || 0), 0), [data.transactions]);
-    const globalStTotal = useMemo(() => (data.settlements || []).reduce((s, t) => s + Number(t.amount || 0), 0), [data.settlements]);
+    // Global totals across ALL clients (master admin only) — live records only
+    const globalTxTotal = useMemo(() => (data.transactions || []).filter(t => !t.isDeleted).reduce((s, t) => s + Number(t.amount || 0), 0), [data.transactions]);
+    const globalStTotal = useMemo(() => (data.settlements || []).filter(s => !s.isDeleted).reduce((s, t) => s + Number(t.amount || 0), 0), [data.settlements]);
     const globalBalance = globalTxTotal - globalStTotal;
 
-    // Per-client health data
+    // Total Commission Amount card — sum of commissionAmount column, filterable by client
+    const [commCardClient, setCommCardClient] = useState("");
+    const commCardSettlements = useMemo(() => {
+      const base = data.settlements || [];
+      return commCardClient ? base.filter(s => s.clientId === commCardClient) : base;
+    }, [data.settlements, commCardClient]);
+    const commCardTotalCommission = useMemo(() => commCardSettlements.reduce((s, r) => s + Number(r.commissionAmount || 0), 0), [commCardSettlements]);
+
+    // Per-client health data — live records only
     const clientHealth = useMemo(() => {
       return (data.users || []).map(u => {
-        const cTx = (data.transactions || []).filter(t => t.clientId === u.id);
-        const cSt = (data.settlements || []).filter(s => s.clientId === u.id);
+        const cTx = (data.transactions || []).filter(t => t.clientId === u.id && !t.isDeleted);
+        const cSt = (data.settlements || []).filter(s => s.clientId === u.id && !s.isDeleted);
         const cTxTotal = cTx.reduce((s, t) => s + Number(t.amount || 0), 0);
         const cStTotal = cSt.reduce((s, t) => s + Number(t.amount || 0), 0);
         const lastTx = cTx.slice().sort((a, b) => sortableValue(b, "date") - sortableValue(a, "date"))[0];
@@ -1603,7 +1611,22 @@
       h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDCB3 Grand Transactions"), h("strong", { className: "text-green" }, money(globalTxTotal, true))),
       h("div", { className: "mgs-card" }, h("span", null, "\u20B9 Grand Settlements"), h("strong", { className: "text-orange" }, money(globalStTotal, true))),
       h("div", { className: "mgs-card" }, h("span", null, "\u2696 Grand Balance"), h("strong", { className: "text-red" }, money(globalBalance, true))),
-      h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDC65 Clients"), h("strong", null, (data.users || []).length))
+      h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDC65 Clients"), h("strong", null, (data.users || []).length)),
+      h("div", { className: "mgs-card mgs-card-commission" },
+        h("div", { className: "mgs-comm-header" },
+          h("span", null, "\uD83D\uDCCA Total Commission Amount"),
+          h("select", {
+            className: "mgs-comm-filter",
+            value: commCardClient,
+            onChange: e => setCommCardClient(e.target.value),
+            title: "Filter by client"
+          },
+            h("option", { value: "" }, "All Clients"),
+            (data.users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
+          )
+        ),
+        h("strong", { className: "text-purple" }, money(commCardTotalCommission, true))
+      )
     );
 
     // Client health strip
@@ -1664,8 +1687,11 @@
         )
       )
     );
-    const txTotal = sortedTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
-    const stTotal = sortedSettlements.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+    // Live-only subsets for per-client summary totals (excludes soft-deleted rows)
+    const liveSortedTransactions = sortedTransactions.filter(t => !t.isDeleted);
+    const liveSortedSettlements  = sortedSettlements.filter(s => !s.isDeleted);
+    const txTotal = liveSortedTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const stTotal = liveSortedSettlements.reduce((sum, s) => sum + Number(s.amount || 0), 0);
     const balance = txTotal - stTotal;
 
     // Working-day window: 5AM → next day 5AM
@@ -1680,7 +1706,7 @@
     }
     const workDayEnd = new Date(workDayStart);
     workDayEnd.setDate(workDayEnd.getDate() + 1); // +24h
-    const todayTxs = sortedTransactions.filter((t) => {
+    const todayTxs = liveSortedTransactions.filter((t) => {
       const cleaned = String(t.date || "").replace(" at ", " ").replace(/(\d+)(st|nd|rd|th)/, "$1");
       const ts = Date.parse(cleaned);
       if (isNaN(ts)) return false;

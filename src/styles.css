@@ -2368,7 +2368,7 @@ tbody tr:hover td {
 /* ─── Master Admin: Global Stats Strip ──────────────────────────────────────── */
 .master-global-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   margin: 0 0 16px 0;
   padding: 16px;
@@ -2386,6 +2386,49 @@ tbody tr:hover td {
 }
 .mgs-card span { font-size: 11px; color: rgba(255,255,255,0.65); font-weight: 600; }
 .mgs-card strong { font-size: 18px; color: #fff; font-weight: 800; }
+
+/* Commission Amount Card */
+.mgs-card-commission {
+  grid-column: span 2;
+  background: rgba(167,139,250,0.15);
+  border-color: rgba(167,139,250,0.35);
+}
+.mgs-comm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.mgs-comm-filter {
+  height: 26px;
+  min-width: 0;
+  width: auto;
+  max-width: 130px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(167,139,250,0.5);
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.mgs-comm-filter option { color: #111; background: #fff; }
+.mgs-comm-breakdown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.55);
+  font-weight: 500;
+}
+.mgs-comm-breakdown b { color: rgba(255,255,255,0.85); font-weight: 700; }
+.mgs-comm-minus { color: #f87171; font-weight: 800; font-size: 13px; }
+.text-purple { color: #c4b5fd !important; }
 
 /* ─── Client Health Strip ────────────────────────────────────────────────────── */
 .client-health-strip {
