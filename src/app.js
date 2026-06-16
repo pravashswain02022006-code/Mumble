@@ -1,5 +1,5 @@
 (function () {
-  const { useEffect, useMemo, useState } = React;
+  const { useEffect, useMemo, useState, useRef } = React;
   const h = React.createElement;
 
   const appName = "Mumble";
@@ -373,24 +373,53 @@
   }
 
   // ── Activity Feed ───────────────────────────────────────────────────────────
-  function ActivityFeed({ auditLog, users }) {
+  function ActivityFeed({ auditLog, users, transactions, settlements }) {
     const [filter, setFilter] = useState("all");
     const [clientFilter, setClientFilter] = useState("");
     const [open, setOpen] = useState(true);
-    const log = (auditLog || []).filter(e => {
+    const actionIcon = { add: "\u2795", edit: "\u270F\uFE0F", delete: "\uD83D\uDDD1\uFE0F", restore: "\u21A9\uFE0F" };
+    const actionColor = { add: "#15803d", edit: "#1d4ed8", delete: "#dc2626", restore: "#d97706" };
+    function clientName(id) { const u = (users||[]).find(u=>u.id===id); return u?u.username:id||"Unknown"; }
+
+    // Derive live activity from transactions + settlements when audit_log is empty/unavailable
+    const derivedEntries = useMemo(() => {
+      const txEntries = (transactions || []).map(t => ({
+        action: t.isDeleted ? "delete" : "add",
+        record_type: "transaction",
+        record_id: t.id,
+        client_id: t.clientId,
+        created_at: t.date || new Date().toISOString(),
+        _derived: true
+      }));
+      const stEntries = (settlements || []).map(s => ({
+        action: s.isDeleted ? "delete" : "add",
+        record_type: "settlement",
+        record_id: s.id,
+        client_id: s.clientId,
+        created_at: s.date || new Date().toISOString(),
+        _derived: true
+      }));
+      return [...txEntries, ...stEntries]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 50);
+    }, [transactions, settlements]);
+
+    // Use real audit_log entries if available, else fall back to derived entries
+    const hasRealAuditLog = auditLog && auditLog.length > 0;
+    const allEntries = hasRealAuditLog ? auditLog : derivedEntries;
+
+    const log = allEntries.filter(e => {
       if (filter !== "all" && e.action !== filter) return false;
       if (clientFilter && e.client_id !== clientFilter) return false;
       return true;
     });
-    const actionIcon = { add: "\u2795", edit: "\u270F\uFE0F", delete: "\uD83D\uDDD1\uFE0F", restore: "\u21A9\uFE0F" };
-    const actionColor = { add: "#15803d", edit: "#1d4ed8", delete: "#dc2626", restore: "#d97706" };
-    function clientName(id) { const u = (users||[]).find(u=>u.id===id); return u?u.username:id; }
 
     return h("section", { className: "admin-card activity-feed-card" },
       h("div", { className: "panel-title" },
         h("div", { className: "panel-title-left" },
           h("span", { className: "panel-type-dot", style:{background:"#6d28d9"} }),
-          h("h2", null, "\uD83D\uDD53 Activity Log")
+          h("h2", null, "\uD83D\uDD53 Activity Log"),
+          !hasRealAuditLog && derivedEntries.length > 0 && h("span", { style: { fontSize: "11px", color: "#6b7280", marginLeft: "8px", fontStyle: "italic" } }, "(live from records)")
         ),
         h("button", { className: "secondary-button", onClick: () => setOpen(o=>!o) }, open ? "\u2303 Collapse" : "\u2304 Expand")
       ),
@@ -408,21 +437,25 @@
             (users||[]).map(u => h("option", { key: u.id, value: u.id }, u.username))
           )
         ),
-        auditLog && auditLog.length === 0
-          ? h("p", { className: "feed-empty" }, "No activity yet. Actions will appear here once the audit_log table is created in Supabase.")
+        allEntries.length === 0
+          ? h("p", { className: "feed-empty" }, "No activity yet. Add a transaction or settlement to see it here.")
           : h("div", { className: "feed-list" },
               log.length === 0
                 ? h("p", { className: "feed-empty" }, "No matching entries.")
                 : log.map((entry, i) =>
-                    h("div", { key: i, className: "feed-entry" },
+                    h("div", { key: entry.id || i, className: "feed-entry" },
                       h("span", { className: "feed-action-badge", style: { background: actionColor[entry.action] || "#6b7280" } },
                         (actionIcon[entry.action] || "\u2022") + " " + (entry.action || "").toUpperCase()
                       ),
                       h("span", { className: "feed-desc" },
                         (entry.record_type || "") + " " + (entry.record_id || "") +
-                        (entry.client_id ? " — " + clientName(entry.client_id) : "")
+                        (entry.client_id ? " \u2014 " + clientName(entry.client_id) : "")
                       ),
-                      h("span", { className: "feed-time" }, new Date(entry.created_at).toLocaleString("en-IN", { day:"numeric",month:"short",hour:"2-digit",minute:"2-digit" }))
+                      h("span", { className: "feed-time" },
+                        entry.created_at
+                          ? new Date(entry.created_at).toLocaleString("en-IN", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })
+                          : ""
+                      )
                     )
                   )
             )
@@ -1190,6 +1223,15 @@
       // Always stamp the current time on new records
       if (!editingId) prepared.date = nowLabel();
       prepared.id = prepared.id.startsWith("#") ? prepared.id : "#" + prepared.id;
+      // Validate Transaction ID: must be exactly 12 digits (transactions only)
+      if (type === "transaction") {
+        const rawId = String(prepared.id || "").replace(/^#/, "");
+        if (!/^[0-9]{12}$/.test(rawId)) {
+          setSaveError("Transaction ID must be exactly 12 digits (numbers only).");
+          setSaving(false);
+          return;
+        }
+      }
       try {
         await onSave(prepared, editingId);
         setForm(empty);
@@ -1314,6 +1356,21 @@
               pattern: "[0-9]{12}",
               title: "Must be exactly 12 digits",
               placeholder: "12-digit UTR number",
+              onKeyDown: (e) => {
+                // Allow: Backspace, Delete, Tab, Escape, Enter, Arrow keys, Home, End
+                const allowed = ["Backspace","Delete","Tab","Escape","Enter","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"];
+                if (allowed.includes(e.key)) return;
+                // Allow Ctrl/Cmd+A, C, V, X
+                if ((e.ctrlKey || e.metaKey) && ["a","c","v","x"].includes(e.key.toLowerCase())) return;
+                // Block anything that's not a digit
+                if (!/^[0-9]$/.test(e.key)) e.preventDefault();
+              },
+              onPaste: (e) => {
+                e.preventDefault();
+                const pasted = (e.clipboardData || window.clipboardData).getData("text");
+                const cleaned = pasted.replace(/[^0-9]/g, "").slice(0, 12);
+                update(key, cleaned);
+              },
               onChange: (e) => {
                 const raw = e.target.value.replace(/[^0-9]/g, "").slice(0, 12);
                 update(key, raw);
@@ -1811,7 +1868,7 @@
         }),
         isMaster && h(AdminManager, { admins: data.admins || [], setData }),
         isMaster && h(UserManager, { users: data.users || [], setData }),
-        isMaster && h(ActivityFeed, { auditLog: data.auditLog || [], users: data.users || [] }),
+        isMaster && h(ActivityFeed, { auditLog: data.auditLog || [], users: data.users || [], transactions: data.transactions || [], settlements: data.settlements || [] }),
         isMaster && h(MasterAdminSettings, { masterCreds: data.masterCreds, onMasterCredsUpdated })
       )
     );
@@ -2296,22 +2353,46 @@
       }
     }
 
+    // Keep a stable ref so the realtime channel always calls the latest refreshData
+    const refreshRef = useRef(refreshData);
+    useEffect(() => { refreshRef.current = refreshData; });
+
     useEffect(() => {
-      refreshData().finally(() => setLoading(false));
+      refreshRef.current().finally(() => setLoading(false));
     }, []);
 
     // Supabase Realtime — auto-refresh on any DB change
+    // Uses refreshRef so the channel (created once) always calls the latest function.
     useEffect(() => {
       const channel = supabase
         .channel("mumble-realtime")
-        .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => refreshData())
-        .on("postgres_changes", { event: "*", schema: "public", table: "settlements" }, () => refreshData())
-        .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, () => refreshData())
-        .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => refreshData())
-        .on("postgres_changes", { event: "*", schema: "public", table: "master_config" }, () => refreshData())
-        .on("postgres_changes", { event: "*", schema: "public", table: "audit_log" }, () => refreshData())
-        .subscribe();
-      return () => supabase.removeChannel(channel);
+        .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => refreshRef.current())
+        .on("postgres_changes", { event: "*", schema: "public", table: "settlements" }, () => refreshRef.current())
+        .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, () => refreshRef.current())
+        .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => refreshRef.current())
+        .on("postgres_changes", { event: "*", schema: "public", table: "master_config" }, () => refreshRef.current())
+        .on("postgres_changes", { event: "*", schema: "public", table: "audit_log" }, () => refreshRef.current())
+        .subscribe((status) => {
+          // If realtime connection fails, fall back to polling every 5 seconds
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn("[Mumble] Realtime channel issue:", status, "— falling back to polling");
+          }
+        });
+
+      // Polling fallback for audit_log (in case Realtime isn't enabled for that table in Supabase)
+      const auditPoll = setInterval(async () => {
+        try {
+          const auditRes = await supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(200);
+          if (!auditRes.error) {
+            setData(prev => Object.assign({}, prev, { auditLog: auditRes.data || [] }));
+          }
+        } catch (_) {}
+      }, 5000);
+
+      return () => {
+        supabase.removeChannel(channel);
+        clearInterval(auditPoll);
+      };
     }, []);
 
     const isAdmin = role === "admin" || role === "masteradmin";
