@@ -1556,17 +1556,20 @@
         .sort((a, b) => { const aVal = sortableValue(a, "date"); const bVal = sortableValue(b, "date"); return bVal - aVal; });
     }, [data.settlements, data.deletedSettlements, selectedClientId, isMaster]);
 
-    // Global totals across ALL clients (master admin only) — live records only
-    const globalTxTotal = useMemo(() => (data.transactions || []).filter(t => !t.isDeleted).reduce((s, t) => s + Number(t.amount || 0), 0), [data.transactions]);
-    const globalStTotal = useMemo(() => (data.settlements || []).filter(s => !s.isDeleted).reduce((s, t) => s + Number(t.amount || 0), 0), [data.settlements]);
+    // Set of valid registered client IDs — used to exclude orphaned records from global totals
+    const registeredClientIds = useMemo(() => new Set((data.users || []).map(u => u.id)), [data.users]);
+
+    // Global totals across ALL clients (master admin only) — live records only, registered clients only
+    const globalTxTotal = useMemo(() => (data.transactions || []).filter(t => !t.isDeleted && registeredClientIds.has(t.clientId)).reduce((s, t) => s + Number(t.amount || 0), 0), [data.transactions, registeredClientIds]);
+    const globalStTotal = useMemo(() => (data.settlements || []).filter(s => !s.isDeleted && registeredClientIds.has(s.clientId)).reduce((s, t) => s + Number(t.amount || 0), 0), [data.settlements, registeredClientIds]);
     const globalBalance = globalTxTotal - globalStTotal;
 
     // Total Commission Amount card — sum of commissionAmount column, filterable by client
     const [commCardClient, setCommCardClient] = useState("");
     const commCardSettlements = useMemo(() => {
-      const base = data.settlements || [];
+      const base = (data.settlements || []).filter(s => registeredClientIds.has(s.clientId));
       return commCardClient ? base.filter(s => s.clientId === commCardClient) : base;
-    }, [data.settlements, commCardClient]);
+    }, [data.settlements, commCardClient, registeredClientIds]);
     const commCardTotalCommission = useMemo(() => commCardSettlements.reduce((s, r) => s + Number(r.commissionAmount || 0), 0), [commCardSettlements]);
 
     // Per-client health data — live records only
