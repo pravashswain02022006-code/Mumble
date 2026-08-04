@@ -45,9 +45,13 @@
     return { username: data.username, password: data.password };
   }
 
-  async function saveMasterCredsToDb(creds) {
+  async function saveMasterCredsToDb(creds, timestamp) {
+    // Accept an explicit timestamp so the caller can write the same value
+    // to localStorage BEFORE this function runs, eliminating any race window
+    // between the Supabase write and the localStorage update.
+    const ts = (timestamp !== undefined && timestamp !== null) ? timestamp : Date.now();
     const { error } = await supabase.from("master_config").upsert(
-      { id: "master", username: creds.username, password: creds.password, password_changed_at: Date.now() },
+      { id: "master", username: creds.username, password: creds.password, password_changed_at: ts },
       { onConflict: "id" }
     );
     if (error) throw new Error("master_config: " + error.message);
@@ -2478,16 +2482,27 @@
       const newCreds = pendingCredsRef.current;
       if (!newCreds) return;
       setSaving(true);
-      saveMasterCredsToDb(newCreds)
+
+      // ── Race-condition fix ────────────────────────────────────────────────
+      // We generate ONE timestamp and use it for BOTH the DB write and the
+      // localStorage value. Critically, we set localStorage BEFORE the DB
+      // write begins. This way, even if Supabase Realtime fires instantly
+      // (between the upsert and the .then()), the comparison
+      // changedAt (ts) > loggedInAt (ts) is FALSE on this device → no self-logout.
+      // On every OTHER device: changedAt (ts) > loggedInAt (old) → logout ✅
+      const changeTimestamp = Date.now();
+      localStorage.setItem("mumble-master-login-time", String(changeTimestamp));
+
+      saveMasterCredsToDb(newCreds, changeTimestamp)
         .then(function () {
           setSuccess("Master admin credentials saved! All other active sessions will be logged out immediately.");
           setError("");
-          // Bump the local login timestamp so THIS session is not treated as stale
-          // when the Realtime event fires and brings back the new password_changed_at.
-          localStorage.setItem("mumble-master-login-time", String(Date.now()));
           if (onMasterCredsUpdated) onMasterCredsUpdated(newCreds);
         })
         .catch(function (err) {
+          // If the save failed, remove the premature login-time update so the
+          // session is not left in an inconsistent state.
+          localStorage.removeItem("mumble-master-login-time");
           setError("Failed to save: " + err.message);
         })
         .finally(function () { setSaving(false); pendingCredsRef.current = null; });
