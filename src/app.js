@@ -47,21 +47,45 @@
 
   async function saveMasterCredsToDb(creds) {
     const { error } = await supabase.from("master_config").upsert(
-      { id: "master", username: creds.username, password: creds.password },
+      { id: "master", username: creds.username, password: creds.password, password_changed_at: Date.now() },
       { onConflict: "id" }
     );
     if (error) throw new Error("master_config: " + error.message);
   }
 
+  // ── Centralised Supabase upsert helper ─────────────────────────────────────
+  // Always specifies { onConflict: "id" } so callers can never forget it.
+  async function dbUpsert(table, record) {
+    const { error } = await supabase.from(table).upsert(record, { onConflict: "id" });
+    if (error) throw new Error(error.message);
+  }
+
+  // ── Paginated fetch — Supabase returns max 1000 rows per request ──────────
+  // This loops in batches of 1000 so tables with >1000 records are fully loaded.
+  async function fetchAllRows(table) {
+    const PAGE_SIZE = 1000;
+    let allRows = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from(table)
+        .select("*")
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw new Error(table + ": " + error.message);
+      allRows = allRows.concat(data || []);
+      if (!data || data.length < PAGE_SIZE) break;   // last page
+      from += PAGE_SIZE;
+    }
+    return allRows;
+  }
+
   async function fetchAll() {
-    const [txRes, stRes, admRes, usrRes] = await Promise.all([
-      supabase.from("transactions").select("*"),
-      supabase.from("settlements").select("*"),
+    const [txData, stData, admRes, usrRes] = await Promise.all([
+      fetchAllRows("transactions"),
+      fetchAllRows("settlements"),
       supabase.from("admins").select("*"),
       supabase.from("users").select("*"),
     ]);
-    if (txRes.error)  throw new Error("transactions: " + txRes.error.message);
-    if (stRes.error)  throw new Error("settlements: " + stRes.error.message);
     if (admRes.error) throw new Error("admins: " + admRes.error.message);
     if (usrRes.error) throw new Error("users: " + usrRes.error.message);
 
@@ -69,31 +93,31 @@
     try {
       const masterRes = await supabase.from("master_config").select("*").eq("id", "master").single();
       if (masterRes.data) masterRow = masterRes.data;
-    } catch (_) {}
+    } catch (_) { }
 
     // Audit log — optional, only if table exists
     let auditLog = [];
     try {
       const auditRes = await supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(200);
       if (!auditRes.error) auditLog = auditRes.data || [];
-    } catch (_) {}
+    } catch (_) { }
 
     // Separate soft-deleted records (if is_deleted column exists)
-    const allTx  = (txRes.data  || []).map(mapTxFromDb);
-    const allSt  = (stRes.data  || []).map(mapStFromDb);
+    const allTx = (txData || []).map(mapTxFromDb);
+    const allSt = (stData || []).map(mapStFromDb);
     const liveTx = allTx.filter(r => !r.isDeleted);
     const liveSt = allSt.filter(r => !r.isDeleted);
     const deletedTx = allTx.filter(r => r.isDeleted);
     const deletedSt = allSt.filter(r => r.isDeleted);
 
     return {
-      transactions:  liveTx,
-      settlements:   liveSt,
+      transactions: liveTx,
+      settlements: liveSt,
       deletedTransactions: deletedTx,
-      deletedSettlements:  deletedSt,
-      admins:        (admRes.data || []).map(mapAdminFromDb),
-      users:         (usrRes.data || []).map(mapUserFromDb),
-      masterCreds:   { username: masterRow.username, password: masterRow.password },
+      deletedSettlements: deletedSt,
+      admins: (admRes.data || []).map(mapAdminFromDb),
+      users: (usrRes.data || []).map(mapUserFromDb),
+      masterCreds: { username: masterRow.username, password: masterRow.password, password_changed_at: masterRow.password_changed_at || null },
       auditLog,
     };
   }
@@ -236,12 +260,12 @@
   function DateRangeModal({ onClose, onDownload, label }) {
     const today = new Date().toISOString().slice(0, 10);
     const [from, setFrom] = useState("");
-    const [to, setTo]     = useState(today);
-    const [err, setErr]   = useState("");
+    const [to, setTo] = useState(today);
+    const [err, setErr] = useState("");
 
     function handleDownload() {
       if (!from) { setErr("Please select a From date."); return; }
-      if (!to)   { setErr("Please select a To date.");   return; }
+      if (!to) { setErr("Please select a To date."); return; }
       if (from > to) { setErr("From date must be before To date."); return; }
       onDownload(from, to);
       onClose();
@@ -284,10 +308,10 @@
       return Object.values(r).join(" ").toLowerCase().includes(q);
     }).slice(0, 5);
     const hasResults = txResults.length > 0 || stResults.length > 0;
-    const CLIENT_COLORS = ["#1d4ed8","#15803d","#a16207","#9d174d","#6d28d9","#c2410c","#0369a1","#334155"];
+    const CLIENT_COLORS = ["#1d4ed8", "#15803d", "#a16207", "#9d174d", "#6d28d9", "#c2410c", "#0369a1", "#334155"];
     function clientColor(clientId, allUsers) {
       const idx = (allUsers || []).findIndex(u => u.id === clientId);
-      return CLIENT_COLORS[Math.max(0,idx) % CLIENT_COLORS.length];
+      return CLIENT_COLORS[Math.max(0, idx) % CLIENT_COLORS.length];
     }
     function clientName(clientId) {
       const u = (users || []).find(u => u.id === clientId);
@@ -346,25 +370,25 @@
         history.length === 0
           ? h("p", { className: "drm-sub" }, "No edit history yet. Edits will appear here after the audit columns are added in Supabase.")
           : h("div", { className: "history-timeline" },
-              history.slice().reverse().map((entry, i) =>
-                h("div", { key: i, className: "history-entry" },
-                  h("div", { className: "history-meta" },
-                    h("span", { className: "history-actor" }, entry.by || "master"),
-                    h("span", { className: "history-ts" }, entry.at || "")
-                  ),
-                  entry.before && entry.after && h("div", { className: "history-diff" },
-                    Object.keys(entry.after).filter(k => String(entry.before[k]) !== String(entry.after[k])).map(k =>
-                      h("div", { key: k, className: "history-diff-row" },
-                        h("span", { className: "diff-key" }, k),
-                        h("span", { className: "diff-before" }, String(entry.before[k] ?? "")),
-                        h("span", { className: "diff-arrow" }, "→"),
-                        h("span", { className: "diff-after" }, String(entry.after[k] ?? ""))
-                      )
+            history.slice().reverse().map((entry, i) =>
+              h("div", { key: i, className: "history-entry" },
+                h("div", { className: "history-meta" },
+                  h("span", { className: "history-actor" }, entry.by || "master"),
+                  h("span", { className: "history-ts" }, entry.at || "")
+                ),
+                entry.before && entry.after && h("div", { className: "history-diff" },
+                  Object.keys(entry.after).filter(k => String(entry.before[k]) !== String(entry.after[k])).map(k =>
+                    h("div", { key: k, className: "history-diff-row" },
+                      h("span", { className: "diff-key" }, k),
+                      h("span", { className: "diff-before" }, String(entry.before[k] ?? "")),
+                      h("span", { className: "diff-arrow" }, "→"),
+                      h("span", { className: "diff-after" }, String(entry.after[k] ?? ""))
                     )
                   )
                 )
               )
-            ),
+            )
+          ),
         h("div", { className: "drm-actions" },
           h("button", { className: "secondary-button", onClick: onClose }, "Close")
         )
@@ -372,14 +396,34 @@
     );
   }
 
-  // ── Activity Feed ───────────────────────────────────────────────────────────
+  // ── Activity Feed ─────────────────────────────────────────────────────────
   function ActivityFeed({ auditLog, users, transactions, settlements }) {
     const [filter, setFilter] = useState("all");
     const [clientFilter, setClientFilter] = useState("");
     const [open, setOpen] = useState(true);
-    const actionIcon = { add: "\u2795", edit: "\u270F\uFE0F", delete: "\uD83D\uDDD1\uFE0F", restore: "\u21A9\uFE0F" };
+    const actionIcon = { add: "➕", edit: "✏️", delete: "🗑️", restore: "↩️" };
     const actionColor = { add: "#15803d", edit: "#1d4ed8", delete: "#dc2626", restore: "#d97706" };
-    function clientName(id) { const u = (users||[]).find(u=>u.id===id); return u?u.username:id||"Unknown"; }
+    function clientName(id) { const u = (users || []).find(u => u.id === id); return u ? u.username : id || "Unknown"; }
+
+    // Cross-reference amount from live records
+    function lookupAmount(record_type, record_id) {
+      const arr = record_type === "transaction" ? (transactions || []) : (settlements || []);
+      const rec = arr.find(r => r.id === record_id);
+      return rec ? Number(rec.amount || rec.paid || 0) : null;
+    }
+
+    // Get the most recent edit diff from a record's editHistory
+    function getEditDiff(record_type, record_id) {
+      const arr = record_type === "transaction" ? (transactions || []) : (settlements || []);
+      const rec = arr.find(r => r.id === record_id);
+      if (!rec || !rec.editHistory || rec.editHistory.length === 0) return null;
+      const latest = rec.editHistory[rec.editHistory.length - 1];
+      if (!latest || !latest.before || !latest.after) return null;
+      const changedKeys = Object.keys(latest.after).filter(k =>
+        k !== "editHistory" && String(latest.before[k]) !== String(latest.after[k])
+      );
+      return changedKeys.length > 0 ? { before: latest.before, after: latest.after, keys: changedKeys } : null;
+    }
 
     // Derive live activity from transactions + settlements when audit_log is empty/unavailable
     const derivedEntries = useMemo(() => {
@@ -389,6 +433,7 @@
         record_id: t.id,
         client_id: t.clientId,
         created_at: t.date || new Date().toISOString(),
+        amount: Number(t.amount || 0),
         _derived: true
       }));
       const stEntries = (settlements || []).map(s => ({
@@ -397,11 +442,12 @@
         record_id: s.id,
         client_id: s.clientId,
         created_at: s.date || new Date().toISOString(),
+        amount: Number(s.amount || s.paid || 0),
         _derived: true
       }));
       return [...txEntries, ...stEntries]
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .slice(0, 50);
+        .slice(0, 100);
     }, [transactions, settlements]);
 
     // Use real audit_log entries if available, else fall back to derived entries
@@ -417,48 +463,66 @@
     return h("section", { className: "admin-card activity-feed-card" },
       h("div", { className: "panel-title" },
         h("div", { className: "panel-title-left" },
-          h("span", { className: "panel-type-dot", style:{background:"#6d28d9"} }),
-          h("h2", null, "\uD83D\uDD53 Activity Log"),
+          h("span", { className: "panel-type-dot", style: { background: "#6d28d9" } }),
+          h("h2", null, "🕓 Activity Log",
+            h("span", { className: "feed-count-badge" }, allEntries.length)
+          ),
           !hasRealAuditLog && derivedEntries.length > 0 && h("span", { style: { fontSize: "11px", color: "#6b7280", marginLeft: "8px", fontStyle: "italic" } }, "(live from records)")
         ),
-        h("button", { className: "secondary-button", onClick: () => setOpen(o=>!o) }, open ? "\u2303 Collapse" : "\u2304 Expand")
+        h("button", { className: "secondary-button", onClick: () => setOpen(o => !o) }, open ? "⌃ Collapse" : "⌄ Expand")
       ),
       open && h("div", null,
         h("div", { className: "feed-filters" },
-          h("select", { value: filter, onChange: e=>setFilter(e.target.value) },
+          h("select", { value: filter, onChange: e => setFilter(e.target.value) },
             h("option", { value: "all" }, "All Actions"),
             h("option", { value: "add" }, "Add"),
             h("option", { value: "edit" }, "Edit"),
             h("option", { value: "delete" }, "Delete"),
             h("option", { value: "restore" }, "Restore")
           ),
-          h("select", { value: clientFilter, onChange: e=>setClientFilter(e.target.value) },
+          h("select", { value: clientFilter, onChange: e => setClientFilter(e.target.value) },
             h("option", { value: "" }, "All Clients"),
-            (users||[]).map(u => h("option", { key: u.id, value: u.id }, u.username))
+            (users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
           )
         ),
         allEntries.length === 0
           ? h("p", { className: "feed-empty" }, "No activity yet. Add a transaction or settlement to see it here.")
           : h("div", { className: "feed-list" },
-              log.length === 0
-                ? h("p", { className: "feed-empty" }, "No matching entries.")
-                : log.map((entry, i) =>
-                    h("div", { key: entry.id || i, className: "feed-entry" },
-                      h("span", { className: "feed-action-badge", style: { background: actionColor[entry.action] || "#6b7280" } },
-                        (actionIcon[entry.action] || "\u2022") + " " + (entry.action || "").toUpperCase()
-                      ),
-                      h("span", { className: "feed-desc" },
-                        (entry.record_type || "") + " " + (entry.record_id || "") +
-                        (entry.client_id ? " \u2014 " + clientName(entry.client_id) : "")
-                      ),
-                      h("span", { className: "feed-time" },
-                        entry.created_at
-                          ? new Date(entry.created_at).toLocaleString("en-IN", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })
-                          : ""
+            log.length === 0
+              ? h("p", { className: "feed-empty" }, "No matching entries.")
+              : log.map((entry, i) => {
+                const amt = entry.amount != null ? entry.amount : lookupAmount(entry.record_type, entry.record_id);
+                const diff = entry.action === "edit" ? getEditDiff(entry.record_type, entry.record_id) : null;
+                return h("div", { key: entry.id || i, className: "feed-entry" },
+                  h("div", { className: "feed-entry-main" },
+                    h("span", { className: "feed-action-badge", style: { background: actionColor[entry.action] || "#6b7280" } },
+                      (actionIcon[entry.action] || "•") + " " + (entry.action || "").toUpperCase()
+                    ),
+                    h("span", { className: "feed-desc" },
+                      (entry.record_type || "") + " " + (entry.record_id || "") +
+                      (entry.client_id ? " — " + clientName(entry.client_id) : "")
+                    ),
+                    amt != null && amt > 0 && h("span", { className: "feed-amount" }, money(amt, true)),
+                    h("span", { className: "feed-time" },
+                      entry.created_at
+                        ? new Date(entry.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                        : ""
+                    )
+                  ),
+                  (entry.performed_by || diff) && h("div", { className: "feed-entry-meta" },
+                    entry.performed_by && h("span", { className: "feed-actor-chip" }, entry.performed_by),
+                    diff && diff.keys.slice(0, 3).map(k =>
+                      h("span", { key: k, className: "feed-diff-inline" },
+                        k + ": ",
+                        h("span", { className: "feed-diff-before" }, String(diff.before[k] ?? "")),
+                        " → ",
+                        h("span", { className: "feed-diff-after" }, String(diff.after[k] ?? ""))
                       )
                     )
                   )
-            )
+                );
+              })
+          )
       )
     );
   }
@@ -479,14 +543,31 @@
     );
   }
 
+  // ── Realtime Status Banner ──────────────────────────────────────────────────────────
+  function RealtimeBanner({ realtimeStatus, onReconnect }) {
+    if (!realtimeStatus || realtimeStatus === "connected") return null;
+    const isReconnecting = realtimeStatus === "reconnecting";
+    return h("div", { className: "realtime-banner" },
+      h("span", { className: "realtime-banner-icon" }, "⚡"),
+      h("span", { className: "realtime-banner-text" },
+        isReconnecting
+          ? "Reconnecting to live updates…"
+          : "Live updates paused — use the \u21ba Refresh button above to get the latest data."
+      ),
+      isReconnecting
+        ? h("span", { className: "realtime-banner-spinner" }, "↺")
+        : h("button", { className: "realtime-reconnect-btn", onClick: onReconnect }, "↺ Reconnect Live")
+    );
+  }
+
   // ── Toast Notification System ──────────────────────────────────────────────
   function useToast() {
     const [toasts, setToasts] = useState([]);
     function showToast(message, type) {
       const id = Date.now() + Math.random();
-      setToasts(function(prev) { return prev.concat({ id, message, type: type || "success" }); });
-      setTimeout(function() {
-        setToasts(function(prev) { return prev.filter(function(t) { return t.id !== id; }); });
+      setToasts(function (prev) { return prev.concat({ id, message, type: type || "success" }); });
+      setTimeout(function () {
+        setToasts(function (prev) { return prev.filter(function (t) { return t.id !== id; }); });
       }, 3500);
     }
     return { toasts, showToast };
@@ -495,7 +576,7 @@
   function ToastContainer({ toasts }) {
     if (!toasts || toasts.length === 0) return null;
     return h("div", { className: "toast-container", "aria-live": "polite" },
-      toasts.map(function(t) {
+      toasts.map(function (t) {
         return h("div", { key: t.id, className: "toast toast-" + t.type },
           h("span", { className: "toast-icon" }, t.type === "success" ? "✓" : t.type === "error" ? "✗" : "ℹ"),
           h("span", { className: "toast-message" }, t.message)
@@ -593,7 +674,7 @@
     return h("div", { className: "brand-mark", "aria-label": appName }, h("span", null), h("span", null));
   }
 
-  function Login({ onLogin, admins, users, masterCreds }) {
+  function Login({ onLogin, admins, users, masterCreds, logoutReason }) {
     const [loginRole, setLoginRole] = useState("user");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
@@ -641,6 +722,10 @@
     }
 
     return h("main", { className: cx("login-page", "bg-" + loginRole) },
+      logoutReason && h("div", { className: "logout-reason-banner" },
+        h("span", { className: "logout-reason-icon" }, "🔒"),
+        h("span", { className: "logout-reason-text" }, logoutReason)
+      ),
       h("div", { className: "role-selector-wrap" },
         h("div", { className: "role-selector" },
           h("select", { value: loginRole, onChange: (e) => { setLoginRole(e.target.value); setError(""); } },
@@ -683,9 +768,16 @@
     );
   }
 
-  function Shell({ route, data, onLogout, onResetDb, onRefreshData, dbError, onDismissError, currentUser }) {
+  function Shell({ route, data, onLogout, onResetDb, onRefreshData, dbError, onDismissError, currentUser, realtimeStatus, reconnectRealtime }) {
     const [profileOpen, setProfileOpen] = useState(false);
+    const [shellRefreshing, setShellRefreshing] = useState(false);
     const [compact, setCompact] = useState(localStorage.getItem("mumble-density") === "compact");
+
+    async function handleShellRefresh() {
+      setShellRefreshing(true);
+      if (onRefreshData) await onRefreshData();
+      setShellRefreshing(false);
+    }
     const isSettings = route.startsWith("/settings");
     const nav = [
       ["/dashboards/home", "Home"],
@@ -704,14 +796,14 @@
     }
 
     // Block browser back gesture — push a dummy state so swipe-back needs 2 gestures
-    useEffect(function() {
+    useEffect(function () {
       window.history.pushState({ noBack: true }, "");
       function onPop(e) {
         // Immediately re-push so the user stays on the current page
         window.history.pushState({ noBack: true }, "");
       }
       window.addEventListener("popstate", onPop);
-      return function() { window.removeEventListener("popstate", onPop); };
+      return function () { window.removeEventListener("popstate", onPop); };
     }, [route]);
 
     return h("div", { className: cx("app-shell", compact && "compact") },
@@ -730,14 +822,14 @@
         ),
         isSettings
           ? h(React.Fragment, null,
-              h("button", { className: "side-link active", onClick: () => navigate("/settings/appearance") }, "Appearance"),
-              h("a", { className: "side-link", href: "mailto:help@mumble.local" }, "Ask a Question")
-            )
+            h("button", { className: "side-link active", onClick: () => navigate("/settings/appearance") }, "Appearance"),
+            h("a", { className: "side-link", href: "mailto:help@mumble.local" }, "Ask a Question")
+          )
           : nav.map(([href, label]) => h("button", {
-              key: href,
-              className: cx("side-link", route === href && "active"),
-              onClick: () => navigate(href),
-            }, label)),
+            key: href,
+            className: cx("side-link", route === href && "active"),
+            onClick: () => navigate(href),
+          }, label)),
         h("div", { className: "sidebar-bottom" },
           h("button", { className: cx("mode", !compact && "active"), onClick: toggleDensity }, "Comfort"),
           h("button", { className: cx("mode", compact && "active"), onClick: toggleDensity }, "Compact")
@@ -747,10 +839,17 @@
         h("div", { className: "topbar-user" },
           h("span", { className: "topbar-username" }, displayName)
         ),
+        h("button", {
+          className: "refresh-data-btn",
+          onClick: handleShellRefresh,
+          disabled: shellRefreshing,
+          title: "Refresh data from server"
+        }, shellRefreshing ? "↺ Refreshing…" : "↺ Refresh"),
         h("button", { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, initials)
       ),
       profileOpen && h(ProfileMenu, { onLogout, currentUser }),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
+      realtimeStatus && realtimeStatus !== "connected" && h(RealtimeBanner, { realtimeStatus, onReconnect: reconnectRealtime }),
       h("main", { className: "content" },
         route === "/dashboards/home" && h(Home, { currentUser, onRefreshData }),
         route === "/dashboards/userRole/transaction" && h(TransactionPage, { mode: "recent", records: data.transactions, allTransactions: data.transactions, allSettlements: data.settlements, onRefreshData, currentUser }),
@@ -849,16 +948,16 @@
 
   // Shared summary shown on both Recent Transaction and Recent Settlement pages
   function SummaryStats({ type, allTransactions, allSettlements }) {
-    const txTotal  = allTransactions.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const stTotal  = allSettlements.reduce((sum, r) => sum + Number(r.amount || 0), 0);
-    const balance  = txTotal - stTotal;
+    const txTotal = allTransactions.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const stTotal = allSettlements.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const balance = txTotal - stTotal;
     const countLabel = type === "transaction" ? "Transaction Count" : "Settlement Count";
     const countValue = type === "transaction" ? allTransactions.length : allSettlements.length;
-    
+
     return h("div", { className: "stats summary-stats" },
-      h(Stat, { label: countLabel,           value: countValue + " records", tone: "orange" }),
-      h(Stat, { label: "Transaction Amount", value: money(txTotal, false),  tone: "green" }),
-      h(Stat, { label: "Balance Amount",     value: money(balance, false),  tone: "red" })
+      h(Stat, { label: countLabel, value: countValue + " records", tone: "orange" }),
+      h(Stat, { label: "Transaction Amount", value: money(txTotal, false), tone: "green" }),
+      h(Stat, { label: "Balance Amount", value: money(balance, false), tone: "red" })
     );
   }
 
@@ -932,22 +1031,22 @@
           table.rows.length === 0
             ? h("tr", null, h("td", { colSpan: heads.length, className: "empty-row" }, "No records match the current filters."))
             : table.rows.map((row) => type === "transaction"
-                ? h("tr", { key: row.id },
-                    h("td", { className: "text-green" }, money(row.amount, true)),
-                    h("td", { className: "transaction-id" }, row.id),
-                    h("td", null, row.vpa),
-                    h("td", null, row.payer),
-                    h("td", null, row.remark || "—"),
-                    h("td", null, row.date)
-                  )
-                : h("tr", { key: row.id },
-                    h("td", { className: "text-green" }, money(row.amount, false)),
-                    h("td", { className: "transaction-id" }, row.id),
-                    h("td", { className: "text-red" }, money(row.paid, true)),
-                    h("td", null, row.remark || "—"),
-                    h("td", null, row.date)
-                  )
+              ? h("tr", { key: row.id },
+                h("td", { className: "text-green" }, money(row.amount, true)),
+                h("td", { className: "transaction-id" }, row.id),
+                h("td", null, row.vpa),
+                h("td", null, row.payer),
+                h("td", null, row.remark || "—"),
+                h("td", null, row.date)
               )
+              : h("tr", { key: row.id },
+                h("td", { className: "text-green" }, money(row.amount, false)),
+                h("td", { className: "transaction-id" }, row.id),
+                h("td", { className: "text-red" }, money(row.paid, true)),
+                h("td", null, row.remark || "—"),
+                h("td", null, row.date)
+              )
+            )
         )
       )
     );
@@ -973,12 +1072,12 @@
 
     function download(from, to) {
       const fromTs = from ? new Date(from).setHours(0, 0, 0, 0) : null;
-      const toTs   = to   ? new Date(to).setHours(23, 59, 59, 999) : null;
+      const toTs = to ? new Date(to).setHours(23, 59, 59, 999) : null;
       const source = (from || to) ? table.allRows.filter((row) => {
         const ts = parseDateLabel(row.date);
         if (ts === null) return false;
         if (fromTs && ts < fromTs) return false;
-        if (toTs   && ts > toTs)   return false;
+        if (toTs && ts > toTs) return false;
         return true;
       }) : table.allRows;
       const rows = source.map((row) => ({
@@ -1027,9 +1126,9 @@
         mode === "recent"
           ? h(SummaryStats, { type: "transaction", allTransactions, allSettlements })
           : h("div", { className: "stats history-stats" },
-              h(Stat, { label: "Transaction Count",  value: table.totals.filteredCount + " records", tone: "orange" }),
-              h(Stat, { label: "Transaction Amount", value: money(table.totals.amount, false), tone: "green" })
-            ),
+            h(Stat, { label: "Transaction Count", value: table.totals.filteredCount + " records", tone: "orange" }),
+            h(Stat, { label: "Transaction Amount", value: money(table.totals.amount, false), tone: "green" })
+          ),
         h(Controls, { table, showQuery: mode === "history", onDownload: download, onRefreshData }),
         h(DataTable, { type: "transaction", table }),
         h(Pager, { table })
@@ -1040,7 +1139,7 @@
   function SettlementPage({ mode, records, allTransactions, allSettlements, onRefreshData, currentUser }) {
     const [refreshing, setRefreshing] = useState(false);
     const totalCommission = records.reduce((sum, row) => sum + Number(row.commissionAmount || 0), 0);
-    const totalPaid       = records.reduce((sum, row) => sum + Number(row.paid || 0), 0);
+    const totalPaid = records.reduce((sum, row) => sum + Number(row.paid || 0), 0);
     const table = useTable(records, "settlement", { count: records.length, commission: totalCommission, paid: totalPaid });
     const title = mode === "recent" ? "Recent Settlements" : "Search Settlement History";
 
@@ -1055,12 +1154,12 @@
 
     function download(from, to) {
       const fromTs = from ? new Date(from).setHours(0, 0, 0, 0) : null;
-      const toTs   = to   ? new Date(to).setHours(23, 59, 59, 999) : null;
+      const toTs = to ? new Date(to).setHours(23, 59, 59, 999) : null;
       const source = (from || to) ? table.allRows.filter((row) => {
         const ts = parseDateLabel(row.date);
         if (ts === null) return false;
         if (fromTs && ts < fromTs) return false;
-        if (toTs   && ts > toTs)   return false;
+        if (toTs && ts > toTs) return false;
         return true;
       }) : table.allRows;
       const rows = source.map((row) => ({
@@ -1108,9 +1207,9 @@
         mode === "recent"
           ? h(SummaryStats, { type: "settlement", allTransactions, allSettlements })
           : h("div", { className: cx("stats history-stats", "three") },
-              h(Stat, { label: "Settlement Count",   value: table.totals.filteredCount + " records", tone: "orange" }),
-              h(Stat, { label: "Settlement Amount",  value: money(table.totals.paid, false), tone: "green" })
-            ),
+            h(Stat, { label: "Settlement Count", value: table.totals.filteredCount + " records", tone: "orange" }),
+            h(Stat, { label: "Settlement Amount", value: money(table.totals.paid, false), tone: "green" })
+          ),
         h(Controls, { table, showQuery: mode === "history", onDownload: download, onRefreshData }),
         h(DataTable, { type: "settlement", table }),
         h(Pager, { table })
@@ -1149,6 +1248,7 @@
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [historyRecord, setHistoryRecord] = useState(null);
     const [bulkExporting, setBulkExporting] = useState(false);
+    const [utrError, setUtrError] = useState("");
 
     const allSelected = records.length > 0 && records.every(r => selectedIds.has(r.id));
     function toggleSelect(id) { setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }
@@ -1156,13 +1256,13 @@
 
     function downloadRange(from, to) {
       const fromTs = from ? new Date(from).setHours(0, 0, 0, 0) : null;
-      const toTs   = to   ? new Date(to).setHours(23, 59, 59, 999) : null;
+      const toTs = to ? new Date(to).setHours(23, 59, 59, 999) : null;
       const source = records.filter((row) => {
         if (!from && !to) return true;
         const ts = parseDateLabel(row.date);
         if (ts === null) return false;
         if (fromTs && ts < fromTs) return false;
-        if (toTs   && ts > toTs)   return false;
+        if (toTs && ts > toTs) return false;
         return true;
       });
       const isT = type === "transaction";
@@ -1223,18 +1323,17 @@
       // Always stamp the current time on new records
       if (!editingId) prepared.date = nowLabel();
       prepared.id = prepared.id.startsWith("#") ? prepared.id : "#" + prepared.id;
-      // Validate Transaction ID: must be exactly 12 digits (transactions only)
-      if (type === "transaction") {
-        const rawId = String(prepared.id || "").replace(/^#/, "");
-        if (!/^[0-9]{12}$/.test(rawId)) {
-          setSaveError("Transaction ID must be exactly 12 digits (numbers only).");
-          setSaving(false);
-          return;
-        }
+      // Validate ID: must be exactly 12 digits for both transactions and settlements
+      const rawId = String(prepared.id || "").replace(/^#/, "");
+      if (!/^[0-9]{12}$/.test(rawId)) {
+        setSaveError("Transaction ID must be exactly 12 digits (numbers only).");
+        setSaving(false);
+        return;
       }
       try {
         await onSave(prepared, editingId);
         setForm(empty);
+        setUtrError("");
         const wasEditing = !!editingId;
         setEditingId("");
         if (!wasEditing) {
@@ -1248,7 +1347,7 @@
       } catch (err) {
         let msg = err.message;
         if (msg.includes("duplicate key value violates unique constraint")) {
-          msg = "Transaction ID already exists. Please check the Transaction ID field.";
+          msg = "This Transaction ID is already in use — please enter a different UTR number.";
         } else if (msg.includes("null value in column")) {
           msg = "A required field is missing. Please check all fields.";
         } else if (msg.includes("invalid input syntax")) {
@@ -1266,7 +1365,12 @@
     function edit(record) {
       setEditingId(record.id);
       setSaveError("");
+      setUtrError("");
       const rec = Object.assign({}, record);
+      // Strip '#' prefix so the numeric-only id input shows the full 12 digits correctly
+      if (rec.id && rec.id.startsWith("#")) {
+        rec.id = rec.id.slice(1);
+      }
       if (type === "settlement" && rec.commission) {
         rec.commission = String(rec.commission).replace(/[^0-9.]/g, "");
       }
@@ -1274,7 +1378,7 @@
     }
 
     const autoCommission = type === "settlement" ? calcCommissionAmount(form.paid, form.commission) : 0;
-    const autoAmount    = type === "settlement" ? (Number(form.paid || 0) + autoCommission) : 0;
+    const autoAmount = type === "settlement" ? (Number(form.paid || 0) + autoCommission) : 0;
 
     return h("section", { className: sectionClass },
       showDlModal && h(DateRangeModal, { label: typeLabel + "s", onClose: () => setShowDlModal(false), onDownload: downloadRange }),
@@ -1348,34 +1452,49 @@
           }
           // UTR / Transaction ID: exactly 12 digits after the '#'
           if (key === "id") {
-            return h("label", { key }, label, h("input", {
-              required: true,
-              value: recordValue(form, key),
-              inputMode: "numeric",
-              maxLength: 12,
-              pattern: "[0-9]{12}",
-              title: "Must be exactly 12 digits",
-              placeholder: "12-digit UTR number",
-              onKeyDown: (e) => {
-                // Allow: Backspace, Delete, Tab, Escape, Enter, Arrow keys, Home, End
-                const allowed = ["Backspace","Delete","Tab","Escape","Enter","ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Home","End"];
-                if (allowed.includes(e.key)) return;
-                // Allow Ctrl/Cmd+A, C, V, X
-                if ((e.ctrlKey || e.metaKey) && ["a","c","v","x"].includes(e.key.toLowerCase())) return;
-                // Block anything that's not a digit
-                if (!/^[0-9]$/.test(e.key)) e.preventDefault();
-              },
-              onPaste: (e) => {
-                e.preventDefault();
-                const pasted = (e.clipboardData || window.clipboardData).getData("text");
-                const cleaned = pasted.replace(/[^0-9]/g, "").slice(0, 12);
-                update(key, cleaned);
-              },
-              onChange: (e) => {
-                const raw = e.target.value.replace(/[^0-9]/g, "").slice(0, 12);
-                update(key, raw);
-              },
-            }));
+            return h("label", { key }, label,
+              h("input", {
+                required: true,
+                value: recordValue(form, key),
+                inputMode: "numeric",
+                maxLength: 12,
+                pattern: "[0-9]{12}",
+                title: "Must be exactly 12 digits",
+                placeholder: "12-digit UTR number",
+                className: utrError ? "input-error" : "",
+                onKeyDown: (e) => {
+                  const allowed = ["Backspace", "Delete", "Tab", "Escape", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"];
+                  if (allowed.includes(e.key)) return;
+                  if ((e.ctrlKey || e.metaKey) && ["a", "c", "v", "x"].includes(e.key.toLowerCase())) return;
+                  if (!/^[0-9]$/.test(e.key)) e.preventDefault();
+                },
+                onPaste: (e) => {
+                  e.preventDefault();
+                  const pasted = (e.clipboardData || window.clipboardData).getData("text");
+                  const cleaned = pasted.replace(/[^0-9]/g, "").slice(0, 12);
+                  update(key, cleaned);
+                  if (cleaned.length === 12) {
+                    const fullId = "#" + cleaned;
+                    const isDup = (records || []).some(r => r.id === fullId && r.id !== editingId);
+                    setUtrError(isDup ? "This Transaction ID is already in use — please enter a different UTR number." : "");
+                  } else {
+                    setUtrError("");
+                  }
+                },
+                onChange: (e) => {
+                  const raw = e.target.value.replace(/[^0-9]/g, "").slice(0, 12);
+                  update(key, raw);
+                  if (raw.length === 12) {
+                    const fullId = "#" + raw;
+                    const isDup = (records || []).some(r => r.id === fullId && r.id !== editingId);
+                    setUtrError(isDup ? "This Transaction ID is already in use — please enter a different UTR number." : "");
+                  } else {
+                    setUtrError("");
+                  }
+                },
+              }),
+              utrError && h("span", { className: "utr-error-msg" }, "⚠ " + utrError)
+            );
           }
           if (key === "clientId") {
             return h("label", { key }, label, h("select", {
@@ -1413,43 +1532,80 @@
             tabIndex: -1,
           })
         ),
-        h("button", { className: "primary-button", disabled: saving }, saving ? "Saving…" : (canEdit && editingId ? "Update Record" : "Add Record")),
+        h("button", { className: "primary-button", disabled: saving || !!utrError }, saving ? "Saving…" : (canEdit && editingId ? "Update Record" : "Add Record")),
         saveError && h("div", { className: "admin-pw-error" }, saveError)
       ),
       h("div", { className: "admin-table-wrap" },
         isMaster && records.length > 0 && h("div", { className: "bulk-action-bar", style: { display: selectedIds.size > 0 ? "flex" : "none" } },
           h("span", null, selectedIds.size + " selected"),
-          h("button", { className: "dl-range-btn", onClick: () => {
-            const sel = records.filter(r => selectedIds.has(r.id));
-            const isT = type === "transaction";
-            const headers = isT ? ["Amount","Transaction Id","VPA","Payer Name","Remark","Entry Date"] : ["Amount","Transaction Id","Paid Amount","Remark","Entry Date"];
-            const rows = sel.map(r => isT ? ({Amount:money(r.amount,true),"Transaction Id":r.id,VPA:r.vpa,"Payer Name":r.payer,Remark:r.remark,"Entry Date":r.date}) : ({Amount:money(r.amount,false),"Transaction Id":r.id,"Paid Amount":money(r.paid,true),Remark:r.remark,"Entry Date":r.date}));
-            downloadCsv("mumble-selected-" + type + "s.csv", headers, rows);
-          }}, "⬇ Export Selected"),
-          h("button", { className: "danger-button", onClick: () => {
-            if (window.confirm("Delete " + selectedIds.size + " record(s)?")) {
-              Array.from(selectedIds).forEach(id => onDelete(id));
-              setSelectedIds(new Set());
+          h("button", {
+            className: "dl-range-btn", onClick: () => {
+              const sel = records.filter(r => selectedIds.has(r.id));
+              const isT = type === "transaction";
+              const headers = isT ? ["Amount", "Transaction Id", "VPA", "Payer Name", "Remark", "Entry Date"] : ["Amount", "Transaction Id", "Paid Amount", "Remark", "Entry Date"];
+              const rows = sel.map(r => isT ? ({ Amount: money(r.amount, true), "Transaction Id": r.id, VPA: r.vpa, "Payer Name": r.payer, Remark: r.remark, "Entry Date": r.date }) : ({ Amount: money(r.amount, false), "Transaction Id": r.id, "Paid Amount": money(r.paid, true), Remark: r.remark, "Entry Date": r.date }));
+              downloadCsv("mumble-selected-" + type + "s.csv", headers, rows);
             }
-          }}, "🗑 Delete Selected"),
+          }, "⬇ Export Selected"),
+          h("button", {
+            className: "danger-button", onClick: () => {
+              if (window.confirm("Delete " + selectedIds.size + " record(s)?")) {
+                Array.from(selectedIds).forEach(id => onDelete(id));
+                setSelectedIds(new Set());
+              }
+            }
+          }, "🗑 Delete Selected"),
           h("button", { className: "secondary-button", onClick: () => setSelectedIds(new Set()) }, "Clear")
         ),
         h("table", null,
-          h("thead", null, h("tr", null,
-            isMaster && h("th", null, h("input", { type: "checkbox", checked: allSelected, onChange: toggleSelectAll })),
-            tableFields.map((field) => h("th", { key: field[0] }, field[1])),
-            (canEdit || canDelete) && h("th", null, "Actions")
-          )),
+          h("thead", null,
+            h("tr", null,
+              isMaster && h("th", null, h("input", { type: "checkbox", checked: allSelected, onChange: toggleSelectAll })),
+              tableFields.map((field) => h("th", { key: field[0] }, field[1])),
+              (canEdit || canDelete) && h("th", null, "Actions")
+            ),
+            (() => {
+              // Mirror the same logic as globalTxTotal / globalStTotal:
+              // exclude soft-deleted rows AND orphaned records (clientId not in any registered user)
+              const registeredIds = new Set((users || []).map(u => u.id));
+              const liveRecords = records.filter(r => !r.isDeleted && registeredIds.has(r.clientId));
+              const totalAmount = liveRecords.reduce((s, r) => s + Number(r.amount || 0), 0);
+              const totalCommission = type === "settlement" ? liveRecords.reduce((s, r) => s + Number(r.commissionAmount || 0), 0) : 0;
+              const totalPaid = type === "settlement" ? liveRecords.reduce((s, r) => s + Number(r.paid || 0), 0) : 0;
+              return h("tr", { className: "th-totals-row" },
+                isMaster && h("th", null),
+                tableFields.map(([key]) => {
+                  if (key === "amount") return h("th", { key, className: "th-total text-green" }, money(totalAmount, true));
+                  if (key === "commissionAmount") return h("th", { key, className: "th-total text-purple" }, money(totalCommission, true));
+                  if (key === "paid") return h("th", { key, className: "th-total text-orange" }, money(totalPaid, true));
+                  return h("th", { key });
+                }),
+                (canEdit || canDelete) && h("th", null)
+              );
+            })()
+          ),
           h("tbody", null, records.map((record) => {
             const isDeleted = record.isDeleted;
             const isEdited = record.editHistory && record.editHistory.length > 0;
+            const isCommMismatch = type === "settlement" && !record.isDeleted && (() => {
+              const rate = parseCommissionRate(record.commission || "3%");
+              const expectedComm = parseFloat((Number(record.paid || 0) * rate).toFixed(2));
+              return Math.abs(Number(record.commissionAmount || 0) - expectedComm) > 1;
+            })();
             let rowClass = selectedIds.has(record.id) ? "row-selected " : "";
             if (isDeleted) rowClass += "deleted-row-highlight ";
+            else if (isCommMismatch) rowClass += "row-comm-mismatch ";
             else if (isEdited) rowClass += "edited-row-highlight ";
 
             return h("tr", { key: record.id, className: rowClass.trim() },
               isMaster && h("td", null, h("input", { type: "checkbox", checked: selectedIds.has(record.id), onChange: () => toggleSelect(record.id) })),
               tableFields.map(([key]) => {
+                if (key === "commissionAmount" && isCommMismatch) {
+                  return h("td", { key, className: "comm-mismatch-cell" },
+                    h("span", { className: "comm-mismatch-icon" }, "⚠"),
+                    money(record.commissionAmount, true)
+                  );
+                }
                 let val = key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key));
                 return h("td", { key }, val);
               }),
@@ -1468,6 +1624,7 @@
           }))
         )
       ),
+      type === "settlement" && h(CommissionIssuesPanel, { records }),
       showSuccessAnim && h("div", { className: "center-popup-overlay" },
         h("div", { className: "center-popup-box" },
           h("div", { className: "center-popup-content" },
@@ -1475,6 +1632,53 @@
             h("span", null, typeLabel + " successfully added")
           ),
           h("div", { className: "center-popup-bar" })
+        )
+      )
+    );
+  }
+
+  // ── Commission Issues Panel (settlements only) ───────────────────────────────────
+  function CommissionIssuesPanel({ records }) {
+    const mismatched = (records || []).filter(r => {
+      if (r.isDeleted) return false;
+      const rate = parseCommissionRate(r.commission || "3%");
+      const expectedComm = parseFloat((Number(r.paid || 0) * rate).toFixed(2));
+      return Math.abs(Number(r.commissionAmount || 0) - expectedComm) > 1;
+    });
+    if (mismatched.length === 0) return null;
+    return h("div", { className: "comm-issues-panel" },
+      h("div", { className: "comm-issues-header" },
+        h("span", { className: "comm-issues-icon" }, "⚠️"),
+        h("strong", null,
+          "Commission Issues — " + mismatched.length + " settlement" +
+          (mismatched.length !== 1 ? "s" : "") + " with unexpected commission amounts"
+        )
+      ),
+      h("div", { className: "comm-issues-table-wrap" },
+        h("table", null,
+          h("thead", null, h("tr", null,
+            h("th", null, "Settlement ID"),
+            h("th", null, "Paid Amount"),
+            h("th", null, "Rate"),
+            h("th", null, "Expected Commission"),
+            h("th", null, "Stored Commission"),
+            h("th", null, "Difference")
+          )),
+          h("tbody", null, mismatched.map(r => {
+            const rate = parseCommissionRate(r.commission || "3%");
+            const expectedComm = parseFloat((Number(r.paid || 0) * rate).toFixed(2));
+            const diff = Number(r.commissionAmount || 0) - expectedComm;
+            return h("tr", { key: r.id },
+              h("td", { className: "transaction-id" }, r.id),
+              h("td", null, money(r.paid, true)),
+              h("td", null, r.commission || "3%"),
+              h("td", null, money(expectedComm, true)),
+              h("td", { className: "text-red" }, money(r.commissionAmount, true)),
+              h("td", { className: diff < 0 ? "text-red" : "text-green" },
+                (diff < 0 ? "−" : "+") + money(Math.abs(diff), true)
+              )
+            );
+          }))
         )
       )
     );
@@ -1503,21 +1707,21 @@
           clients.length === 0
             ? h("p", { className: "empty-clients" }, "No clients found. Please contact Master Admin to create clients.")
             : clients.map((c, idx) => {
-                const col = CLIENT_COLORS[idx % CLIENT_COLORS.length];
-                const initials = (c.username || "?").split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
-                return h("button", {
-                  key: c.id,
-                  className: "client-select-btn",
-                  style: { borderColor: col.accent, background: col.bg },
-                  onClick: () => onSelect(c.id)
-                },
-                  h("span", { className: "client-avatar", style: { background: col.accent, color: "#fff" } }, initials),
-                  h("span", { className: "client-info" },
-                    h("span", { className: "client-name", style: { color: col.accent } }, c.username)
-                  ),
-                  h("span", { className: "client-arrow", style: { color: col.accent } }, "→")
-                );
-              })
+              const col = CLIENT_COLORS[idx % CLIENT_COLORS.length];
+              const initials = (c.username || "?").split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
+              return h("button", {
+                key: c.id,
+                className: "client-select-btn",
+                style: { borderColor: col.accent, background: col.bg },
+                onClick: () => onSelect(c.id)
+              },
+                h("span", { className: "client-avatar", style: { background: col.accent, color: "#fff" } }, initials),
+                h("span", { className: "client-info" },
+                  h("span", { className: "client-name", style: { color: col.accent } }, c.username)
+                ),
+                h("span", { className: "client-arrow", style: { color: col.accent } }, "→")
+              );
+            })
         ),
         h("div", { className: "client-select-footer" },
           h("button", { className: "secondary-button", onClick: onLogout }, "Logout")
@@ -1526,11 +1730,18 @@
     );
   }
 
-  function AdminPage({ data, setData, onLogout, dbError, onDismissError, role, selectedClientId, onSelectClient, onMasterCredsUpdated }) {
+  function AdminPage({ data, setData, onLogout, dbError, onDismissError, role, selectedClientId, onSelectClient, onMasterCredsUpdated, onRefreshData, realtimeStatus, reconnectRealtime }) {
     const [saving, setSaving] = useState(false);
+    const [adminRefreshing, setAdminRefreshing] = useState(false);
     const isMaster = role === "masteradmin";
     const { toasts, showToast } = useToast();
     const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("mumble-sidebar") === "1");
+
+    async function handleAdminRefresh() {
+      setAdminRefreshing(true);
+      if (onRefreshData) await onRefreshData();
+      setAdminRefreshing(false);
+    }
 
     function toggleSidebar() {
       setSidebarOpen(prev => {
@@ -1567,20 +1778,34 @@
     // Total Commission Amount card — sum of commissionAmount column, filterable by client
     const [commCardClient, setCommCardClient] = useState("");
     const commCardSettlements = useMemo(() => {
-      const base = (data.settlements || []).filter(s => registeredClientIds.has(s.clientId));
+      const base = (data.settlements || []).filter(s => !s.isDeleted && registeredClientIds.has(s.clientId));
       return commCardClient ? base.filter(s => s.clientId === commCardClient) : base;
     }, [data.settlements, commCardClient, registeredClientIds]);
     const commCardTotalCommission = useMemo(() => commCardSettlements.reduce((s, r) => s + Number(r.commissionAmount || 0), 0), [commCardSettlements]);
 
-    // Per-client health data — live records only
+    // Commission mismatch detection — expected = 3% of the relevant transaction base
+    const commCardTxBase = useMemo(() => {
+      if (commCardClient) {
+        return (data.transactions || []).filter(t => !t.isDeleted && t.clientId === commCardClient).reduce((s, t) => s + Number(t.amount || 0), 0);
+      }
+      return globalTxTotal;
+    }, [commCardClient, data.transactions, globalTxTotal]);
+    const commExpected = commCardTxBase * 0.03;
+    // Allow ₹1 tolerance for floating-point rounding
+    const commMismatch = commCardTxBase > 0 && Math.abs(commCardTotalCommission - commExpected) > 1;
+
+    // Per-client health data — live records only (includes per-client commission mismatch flag)
     const clientHealth = useMemo(() => {
       return (data.users || []).map(u => {
         const cTx = (data.transactions || []).filter(t => t.clientId === u.id && !t.isDeleted);
         const cSt = (data.settlements || []).filter(s => s.clientId === u.id && !s.isDeleted);
         const cTxTotal = cTx.reduce((s, t) => s + Number(t.amount || 0), 0);
         const cStTotal = cSt.reduce((s, t) => s + Number(t.amount || 0), 0);
+        const cCommTotal = cSt.reduce((s, st) => s + Number(st.commissionAmount || 0), 0);
+        const cCommExpected = cTxTotal * 0.03;
+        const cCommMismatch = cTxTotal > 0 && Math.abs(cCommTotal - cCommExpected) > 1;
         const lastTx = cTx.slice().sort((a, b) => sortableValue(b, "date") - sortableValue(a, "date"))[0];
-        return { user: u, txTotal: cTxTotal, stTotal: cStTotal, balance: cTxTotal - cStTotal, lastTx };
+        return { user: u, txTotal: cTxTotal, stTotal: cStTotal, balance: cTxTotal - cStTotal, lastTx, commTotal: cCommTotal, commExpected: cCommExpected, commMismatch: cCommMismatch };
       });
     }, [data.users, data.transactions, data.settlements]);
 
@@ -1596,7 +1821,11 @@
     const clientObj = (data.users || []).find(u => u.id === selectedClientId) || { username: selectedClientId };
 
     async function saveRecord(kind, record, editingId) {
-      const prepared = Object.assign({}, record, { clientId: record.clientId || selectedClientId || "usr-001" });
+      const resolvedClientId = record.clientId || selectedClientId;
+      if (!resolvedClientId) {
+        throw new Error("Please select a client before saving.");
+      }
+      const prepared = Object.assign({}, record, { clientId: resolvedClientId });
       if (isMaster && !editingId) {
         prepared.addedByMaster = true;
       }
@@ -1612,21 +1841,28 @@
       }
       const table = kind === "transactions" ? "transactions" : "settlements";
       const dbRecord = kind === "transactions" ? mapTxToDb(prepared) : mapStToDb(prepared);
-      // Optimistic update
-      setData((current) => {
-        const list = current[kind] || [];
-        const exists = list.some((item) => item.id === editingId || item.id === prepared.id);
-        const nextList = exists
-          ? list.map((item) => item.id === (editingId || prepared.id) ? prepared : item)
-          : [prepared].concat(list);
-        return Object.assign({}, current, { [kind]: nextList });
-      });
       setSaving(true);
       try {
-        const { error } = await supabase.from(table).upsert(dbRecord);
-        if (error) throw new Error(error.message);
+        if (editingId) {
+          // Editing an existing record — use update (targets row by id, no conflict ambiguity)
+          const { error } = await supabase.from(table).update(dbRecord).eq("id", editingId);
+          if (error) throw new Error(error.message);
+        } else {
+          // New record — use insert (unambiguous, no onConflict footgun)
+          const { error } = await supabase.from(table).insert(dbRecord);
+          if (error) throw new Error(error.message);
+        }
+        // Only update UI state AFTER the DB confirms success — no ghost records on failure
+        setData((current) => {
+          const list = current[kind] || [];
+          const exists = list.some((item) => item.id === (editingId || prepared.id));
+          const nextList = exists
+            ? list.map((item) => item.id === (editingId || prepared.id) ? prepared : item)
+            : [prepared].concat(list);
+          return Object.assign({}, current, { [kind]: nextList });
+        });
       } catch (err) {
-        throw err; // re-throw so CrudManager can catch it
+        throw err; // re-throw so CrudManager can catch and display the error
       } finally {
         setSaving(false);
       }
@@ -1646,10 +1882,20 @@
       } catch (_) {
         await supabase.from(table).delete().eq("id", id);
       }
-      setData(current => Object.assign({}, current, { [kind]: current[kind].filter(item => item.id !== id) }));
+      // Move soft-deleted record into the deletedXxx bucket (keeps totals accurate and deleted panel populated)
+      const deletedKey = kind === "transactions" ? "deletedTransactions" : "deletedSettlements";
+      setData(current => {
+        const liveList = (current[kind] || []);
+        const deletedRecord = liveList.find(item => item.id === id);
+        const nextLive = liveList.filter(item => item.id !== id);
+        const nextDeleted = deletedRecord
+          ? [Object.assign({}, deletedRecord, { isDeleted: true, deletedAt: new Date().toISOString() })].concat(current[deletedKey] || [])
+          : (current[deletedKey] || []);
+        return Object.assign({}, current, { [kind]: nextLive, [deletedKey]: nextDeleted });
+      });
       showToast("Record deleted", "success");
       // Insert audit log
-      try { await supabase.from("audit_log").insert({ action: "delete", record_type: kind.slice(0, -1), record_id: id, performed_by: "masteradmin" }); } catch (_) {}
+      try { await supabase.from("audit_log").insert({ action: "delete", record_type: kind.slice(0, -1), record_id: id, performed_by: "masteradmin" }); } catch (_) { }
     }
 
     async function restoreRecord(kind, id) {
@@ -1667,12 +1913,12 @@
           });
         });
         showToast("Record restored!", "success");
-        try { await supabase.from("audit_log").insert({ action: "restore", record_type: kind.slice(0, -1), record_id: id, performed_by: "masteradmin" }); } catch (_) {}
+        try { await supabase.from("audit_log").insert({ action: "restore", record_type: kind.slice(0, -1), record_id: id, performed_by: "masteradmin" }); } catch (_) { }
       } catch (err) { showToast("Restore failed: " + err.message, "error"); }
     }
 
     async function addAuditLog(entry) {
-      try { await supabase.from("audit_log").insert(Object.assign({ performed_by: "masteradmin" }, entry)); } catch (_) {}
+      try { await supabase.from("audit_log").insert(Object.assign({ performed_by: "masteradmin" }, entry)); } catch (_) { }
     }
 
     // Global stats strip for master admin
@@ -1681,7 +1927,7 @@
       h("div", { className: "mgs-card" }, h("span", null, "\u20B9 Grand Settlements"), h("strong", { className: "text-orange" }, money(globalStTotal, true))),
       h("div", { className: "mgs-card" }, h("span", null, "\u2696 Grand Balance"), h("strong", { className: "text-red" }, money(globalBalance, true))),
       h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDC65 Clients"), h("strong", null, (data.users || []).length)),
-      h("div", { className: "mgs-card mgs-card-commission" },
+      h("div", { className: cx("mgs-card mgs-card-commission", commMismatch && "mgs-comm-mismatch-card") },
         h("div", { className: "mgs-comm-header" },
           h("span", null, "\uD83D\uDCCA Total Commission Amount"),
           h("select", {
@@ -1694,7 +1940,17 @@
             (data.users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
           )
         ),
-        h("strong", { className: "text-purple" }, money(commCardTotalCommission, true))
+        h("strong", { className: "text-purple" }, money(commCardTotalCommission, true)),
+        commMismatch && h("div", { className: "comm-mismatch-alert" },
+          h("span", { className: "comm-alert-icon" }, "\u26A0\uFE0F"),
+          h("div", null,
+            h("strong", null, "Commission mismatch!"),
+            h("span", null, "Expected 3%: " + money(commExpected, true)),
+            h("span", { className: "comm-alert-diff" },
+              (commCardTotalCommission < commExpected ? "\u2212" : "+") + money(Math.abs(commCardTotalCommission - commExpected), true) + " off"
+            )
+          )
+        )
       )
     );
 
@@ -1705,25 +1961,34 @@
         const initials = (ch.user.username || "?").slice(0, 2).toUpperCase();
         return h("button", {
           key: ch.user.id,
-          className: cx("client-health-card", selectedClientId === ch.user.id && "chc-active"),
-          style: { borderColor: col.accent },
+          className: cx("client-health-card", selectedClientId === ch.user.id && "chc-active", ch.commMismatch && "chc-comm-mismatch"),
+          style: { borderColor: ch.commMismatch ? "#ef4444" : col.accent },
           onClick: () => onSelectClient(ch.user.id)
         },
           h("div", { className: "chc-top" },
-            h("span", { className: "chc-avatar", style: { background: col.accent } }, initials),
+            h("span", { className: "chc-avatar", style: { background: ch.commMismatch ? "#ef4444" : col.accent } }, initials),
             h("div", null,
               h("strong", { className: "chc-name" }, ch.user.username),
               ch.lastTx && h("span", { className: "chc-last" }, "Last: " + ch.lastTx.date.slice(0, 20))
-            )
+            ),
+            ch.commMismatch && h("span", { className: "chc-mismatch-badge" }, "⚠ Comm!")
           ),
           h("div", { className: "chc-stats" },
             h("span", { className: "text-green" }, money(ch.txTotal, true)),
             h("span", { className: "chc-sep" }, "|"),
-            h("span", { className: "text-red" }, money(ch.balance, true))
+            h("span", { className: "text-red" }, money(ch.balance, true)),
+            h("span", { className: "chc-sep" }, "|"),
+            h("span", { className: "chc-comm-inline-label" }, "C:"),
+            h("span", { className: ch.commMismatch ? "text-red" : "text-purple" }, money(ch.commTotal, true))
+          ),
+          ch.commMismatch && h("div", { className: "chc-comm-row" },
+            h("span", { className: "chc-comm-label" }, "Expected:"),
+            h("span", { className: "chc-comm-expected" }, money(ch.commExpected, true))
           )
         );
       })
     );
+
 
     // Quick Action Sidebar
     const quickSidebar = isMaster && h(React.Fragment, null,
@@ -1758,7 +2023,7 @@
     );
     // Live-only subsets for per-client summary totals (excludes soft-deleted rows)
     const liveSortedTransactions = sortedTransactions.filter(t => !t.isDeleted);
-    const liveSortedSettlements  = sortedSettlements.filter(s => !s.isDeleted);
+    const liveSortedSettlements = sortedSettlements.filter(s => !s.isDeleted);
     const txTotal = liveSortedTransactions.reduce((sum, t) => sum + Number(t.amount || 0), 0);
     const stTotal = liveSortedSettlements.reduce((sum, s) => sum + Number(s.amount || 0), 0);
     const balance = txTotal - stTotal;
@@ -1832,11 +2097,18 @@
           isMaster && h("span", { className: "role-badge master" }, "Master Admin"),
           !isMaster && h("span", { className: "role-badge" }, "Admin"),
           saving && h("span", { className: "saving-indicator" }, "Saving\u2026"),
+          h("button", {
+            className: "refresh-data-btn",
+            onClick: handleAdminRefresh,
+            disabled: adminRefreshing,
+            title: "Refresh all data from server"
+          }, adminRefreshing ? "↺ Refreshing…" : "↺ Refresh"),
           h("button", { className: "secondary-button", onClick: () => onLogout() }, "User Portal"),
           h("button", { className: "primary-button", onClick: onLogout }, "Logout")
         )
       ),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
+      realtimeStatus && realtimeStatus !== "connected" && h(RealtimeBanner, { realtimeStatus, onReconnect: reconnectRealtime }),
       isMaster && globalStats,
       isMaster && healthStrip,
       summaryCards,
@@ -1926,8 +2198,8 @@
       };
       // Write to Supabase FIRST — only update UI on success
       try {
-        const { error: dbErr } = await supabase.from("admins").upsert(mapAdminToDb(record));
-        if (dbErr) throw new Error(dbErr.message);
+        // Use the centralised helper — always uses { onConflict: "id" }
+        await dbUpsert("admins", mapAdminToDb(record));
         setData(function (current) {
           const list = current.admins || [];
           const exists = list.some(function (item) { return item.id === record.id; });
@@ -2073,8 +2345,8 @@
       };
       // Write to Supabase FIRST — only update UI on success
       try {
-        const { error: dbErr } = await supabase.from("users").upsert(mapUserToDb(record));
-        if (dbErr) throw new Error(dbErr.message);
+        // Use the centralised helper — always uses { onConflict: "id" }
+        await dbUpsert("users", mapUserToDb(record));
         setData(function (current) {
           const list = current.users || [];
           const exists = list.some(function (item) { return item.id === record.id; });
@@ -2174,7 +2446,7 @@
 
   // ── Master Admin Settings (change own username / password) ───────────────
   function MasterAdminSettings({ masterCreds, onMasterCredsUpdated }) {
-    const [form, setForm] = useState(function() {
+    const [form, setForm] = useState(function () {
       const c = masterCreds || { username: "masterLead", password: "" };
       return { username: c.username, password: c.password, confirmPassword: "" };
     });
@@ -2182,9 +2454,11 @@
     const [success, setSuccess] = useState("");
     const [saving, setSaving] = useState(false);
     const [showPw, setShowPw] = useState(false);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const pendingCredsRef = useRef(null);
 
     function update(name, value) {
-      setForm(function(cur) { return Object.assign({}, cur, { [name]: value }); });
+      setForm(function (cur) { return Object.assign({}, cur, { [name]: value }); });
       setError(""); setSuccess("");
     }
 
@@ -2194,21 +2468,58 @@
       const pwErr = validatePassword(form.password);
       if (pwErr) { setError(pwErr); return; }
       if (form.password !== form.confirmPassword) { setError("Passwords do not match"); return; }
+      // Show confirmation modal before saving
+      pendingCredsRef.current = { username: form.username.trim(), password: form.password };
+      setShowConfirmModal(true);
+    }
+
+    function confirmSave() {
+      setShowConfirmModal(false);
+      const newCreds = pendingCredsRef.current;
+      if (!newCreds) return;
       setSaving(true);
-      const newCreds = { username: form.username.trim(), password: form.password };
       saveMasterCredsToDb(newCreds)
-        .then(function() {
-          setSuccess("Master admin credentials saved to Supabase! New credentials take effect immediately.");
+        .then(function () {
+          setSuccess("Master admin credentials saved! All other active sessions will be logged out immediately.");
           setError("");
+          // Bump the local login timestamp so THIS session is not treated as stale
+          // when the Realtime event fires and brings back the new password_changed_at.
+          localStorage.setItem("mumble-master-login-time", String(Date.now()));
           if (onMasterCredsUpdated) onMasterCredsUpdated(newCreds);
         })
-        .catch(function(err) {
+        .catch(function (err) {
           setError("Failed to save: " + err.message);
         })
-        .finally(function() { setSaving(false); });
+        .finally(function () { setSaving(false); pendingCredsRef.current = null; });
     }
 
     return h("section", { className: "admin-card admin-manager-card" },
+      // ── Confirmation Modal ───────────────────────────────────────────────
+      showConfirmModal && h("div", { className: "drm-overlay" },
+        h("div", { className: "drm-box pw-change-confirm-box" },
+          h("div", { className: "drm-header" },
+            h("h3", null, "⚠️ Confirm Password Change"),
+            h("button", { className: "drm-close", onClick: function () { setShowConfirmModal(false); } }, "✕")
+          ),
+          h("div", { className: "pw-change-warning" },
+            h("div", { className: "pw-change-warning-icon" }, "🔐"),
+            h("p", { className: "pw-change-warning-text" },
+              "You are about to change the Master Admin password."
+            ),
+            h("ul", { className: "pw-change-warning-list" },
+              h("li", null, "✅ Your current session will remain active."),
+              h("li", null, "🚪 All other devices and browsers logged in as Master Admin, Admin, or User will be ", h("strong", null, "logged out immediately."))
+            ),
+            h("p", { className: "pw-change-warning-note" },
+              "Other sessions will see a message: \"Password has been changed. Please log in again.\""
+            )
+          ),
+          h("div", { className: "drm-actions" },
+            h("button", { className: "secondary-button", onClick: function () { setShowConfirmModal(false); } }, "Cancel"),
+            h("button", { className: "danger-button", onClick: confirmSave }, "Yes, Change Password & Log Out Others")
+          )
+        )
+      ),
       h("div", { className: "panel-title" },
         h("h2", null, "Master Admin Settings"),
         h("p", { style: { margin: 0, fontSize: "0.85rem", opacity: 0.6 } }, "Change your own login credentials")
@@ -2219,7 +2530,7 @@
             required: true,
             placeholder: "Enter new username",
             value: form.username,
-            onChange: function(e) { update("username", e.target.value); }
+            onChange: function (e) { update("username", e.target.value); }
           })
         ),
         h("label", null, "New Password",
@@ -2230,13 +2541,13 @@
               placeholder: "Min 8 chars, mixed case, digit, special",
               value: form.password,
               style: { paddingRight: "2.5rem", width: "100%", boxSizing: "border-box" },
-              onChange: function(e) { update("password", e.target.value); }
+              onChange: function (e) { update("password", e.target.value); }
             }),
             h("button", {
               type: "button",
               className: "toggle-pw-btn",
               style: { position: "absolute", right: "0.5rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem" },
-              onClick: function() { setShowPw(function(p) { return !p; }); },
+              onClick: function () { setShowPw(function (p) { return !p; }); },
               title: showPw ? "Hide" : "Show"
             }, showPw ? "🙈" : "👁")
           )
@@ -2247,7 +2558,7 @@
             type: "password",
             placeholder: "Re-enter new password",
             value: form.confirmPassword,
-            onChange: function(e) { update("confirmPassword", e.target.value); }
+            onChange: function (e) { update("confirmPassword", e.target.value); }
           })
         ),
         h("button", { className: "primary-button", disabled: saving }, saving ? "Saving…" : "Update My Credentials"),
@@ -2317,15 +2628,18 @@
     const [data, setData] = useState(() => ({ transactions: [], settlements: [], admins: [], users: [], masterCreds: null }));
     const [loading, setLoading] = useState(true);
     const [dbError, setDbError] = useState(null);
+    const [realtimeStatus, setRealtimeStatus] = useState("connected");
     // Session state — stored in localStorage only for tab continuity (not as data cache)
     const [role, setRole] = useState(() => localStorage.getItem("mumble-role") || "");
     const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem("mumble-current-user-id") || "");
     const [selectedClientId, setSelectedClientId] = useState(() => localStorage.getItem("mumble-selected-client-id") || "");
+    // Reason for force-logout — shown as a banner on the login page
+    const [logoutReason, setLogoutReason] = useState("");
 
     // Derive the current user object from loaded data
-    const currentUser = useMemo(function() {
+    const currentUser = useMemo(function () {
       if (!currentUserId) return null;
-      return (data.users || []).find(function(u) { return u.id === currentUserId; }) || null;
+      return (data.users || []).find(function (u) { return u.id === currentUserId; }) || null;
     }, [data.users, currentUserId]);
 
     // Keep session state in sync with localStorage (tab continuity only)
@@ -2360,15 +2674,11 @@
     const refreshRef = useRef(refreshData);
     useEffect(() => { refreshRef.current = refreshData; });
 
-    useEffect(() => {
-      refreshRef.current().finally(() => setLoading(false));
-    }, []);
+    const realtimeChannelRef = useRef(null);
 
-    // Supabase Realtime — auto-refresh on any DB change
-    // Uses refreshRef so the channel (created once) always calls the latest function.
-    useEffect(() => {
-      const channel = supabase
-        .channel("mumble-realtime")
+    function createRealtimeChannel() {
+      const ch = supabase
+        .channel("mumble-realtime-" + Date.now())
         .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => refreshRef.current())
         .on("postgres_changes", { event: "*", schema: "public", table: "settlements" }, () => refreshRef.current())
         .on("postgres_changes", { event: "*", schema: "public", table: "admins" }, () => refreshRef.current())
@@ -2376,24 +2686,60 @@
         .on("postgres_changes", { event: "*", schema: "public", table: "master_config" }, () => refreshRef.current())
         .on("postgres_changes", { event: "*", schema: "public", table: "audit_log" }, () => refreshRef.current())
         .subscribe((status) => {
-          // If realtime connection fails, fall back to polling every 5 seconds
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn("[Mumble] Realtime channel issue:", status, "— falling back to polling");
+          if (status === "SUBSCRIBED") {
+            setRealtimeStatus("connected");
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn("[Mumble] Realtime channel issue:", status);
+            setRealtimeStatus("error");
+            // Trigger one immediate refresh so data stays current at the moment of failure
+            refreshRef.current();
           }
         });
+      realtimeChannelRef.current = ch;
+      return ch;
+    }
+
+    async function reconnectRealtime() {
+      setRealtimeStatus("reconnecting");
+      if (realtimeChannelRef.current) {
+        try { await supabase.removeChannel(realtimeChannelRef.current); } catch (_) { }
+      }
+      createRealtimeChannel();
+      await refreshRef.current();
+    }
+
+    useEffect(() => {
+      refreshRef.current().finally(() => setLoading(false));
+    }, []);
+
+    // Dev smoke test — verify Supabase read access on localhost so RLS problems
+    // surface immediately during development rather than silently on production.
+    useEffect(() => {
+      if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+        supabase.from("transactions").select("id").limit(1)
+          .then(({ error }) => {
+            if (error) console.error("⚠️ Supabase connectivity check failed:", error.message);
+            else console.info("✅ Supabase connection OK");
+          });
+      }
+    }, []);
+
+    // Supabase Realtime — auto-refresh on any DB change
+    useEffect(() => {
+      createRealtimeChannel();
 
       // Polling fallback for audit_log (in case Realtime isn't enabled for that table in Supabase)
       const auditPoll = setInterval(async () => {
         try {
-          const auditRes = await supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(200);
+          const auditRes = await supabase.from("audit_log").select("*").order("created_at", { ascending: false }).limit(500);
           if (!auditRes.error) {
             setData(prev => Object.assign({}, prev, { auditLog: auditRes.data || [] }));
           }
-        } catch (_) {}
+        } catch (_) { }
       }, 5000);
 
       return () => {
-        supabase.removeChannel(channel);
+        if (realtimeChannelRef.current) supabase.removeChannel(realtimeChannelRef.current);
         clearInterval(auditPoll);
       };
     }, []);
@@ -2415,18 +2761,25 @@
 
     function login(nextRole, userId) {
       setRole(nextRole);
+      setLogoutReason(""); // Clear any previous logout reason on successful login
+      // Record the exact time this browser session logged in — used to detect
+      // whether the master admin password was changed from another device.
+      // Applies to ALL roles so any session can be force-kicked on password change.
+      localStorage.setItem("mumble-master-login-time", String(Date.now()));
       if (nextRole === "user" && userId) {
         setCurrentUserId(userId);
       }
     }
-    
-    function logout() {
+
+    function logout(reason) {
       setRole("");
       setCurrentUserId("");
       setSelectedClientId("");
       localStorage.removeItem("mumble-role");
       localStorage.removeItem("mumble-current-user-id");
       localStorage.removeItem("mumble-selected-client-id");
+      localStorage.removeItem("mumble-master-login-time");
+      if (reason) setLogoutReason(reason);
       navigate("/login");
     }
 
@@ -2437,8 +2790,37 @@
 
     // Callback when master creds are updated from MasterAdminSettings
     function onMasterCredsUpdated(newCreds) {
-      setData(function(prev) { return Object.assign({}, prev, { masterCreds: newCreds }); });
+      setData(function (prev) { return Object.assign({}, prev, { masterCreds: newCreds }); });
     }
+
+    // ── Force-logout ALL sessions when master password changes ────────────────
+    // When any device changes the master admin password, Supabase Realtime fires
+    // on master_config → refreshData() updates data.masterCreds → this effect runs.
+    // If the DB's password_changed_at is newer than when THIS browser logged in,
+    // the session is stale → force logout with a clear message.
+    //
+    // This applies to ALL roles (masteradmin, admin, user):
+    //   – The device that changed the password bumps mumble-master-login-time to NOW,
+    //     so its own changedAt will never be > loggedInAt → it stays logged in.
+    //   – Every OTHER device has an older loggedInAt → it gets kicked.
+    useEffect(function () {
+      // Only check if the user is actually logged in
+      if (!role) return;
+
+      const changedAt = data.masterCreds && data.masterCreds.password_changed_at
+        ? Number(data.masterCreds.password_changed_at)
+        : null;
+      const loggedInAt = Number(localStorage.getItem("mumble-master-login-time") || "0");
+
+      // If the column doesn't exist in Supabase yet, changedAt is null → skip.
+      // If no login timestamp recorded (e.g., old session before this feature), skip.
+      if (!changedAt || !loggedInAt) return;
+
+      // Password was changed after this browser logged in → force logout immediately.
+      if (changedAt > loggedInAt) {
+        logout("🔐 The Master Admin password has been changed. You have been logged out for security. Please log in again.");
+      }
+    }, [role, data.masterCreds]);
 
     // Filter transactions and settlements shown to user/client
     const filteredDataForClient = useMemo(() => {
@@ -2455,7 +2837,7 @@
 
     // Admin dashboard (both masteradmin and admin land here after login)
     if (normalizedRoute.startsWith("/admin")) {
-      if (!isAdmin) return h(Login, { onLogin: login, admins: data.admins, users: data.users, masterCreds: data.masterCreds });
+      if (!isAdmin) return h(Login, { onLogin: login, admins: data.admins, users: data.users, masterCreds: data.masterCreds, logoutReason });
       return h(AdminPage, {
         data,
         setData,
@@ -2465,11 +2847,14 @@
         role,
         selectedClientId,
         onSelectClient: setSelectedClientId,
-        onMasterCredsUpdated
+        onMasterCredsUpdated,
+        onRefreshData: refreshData,
+        realtimeStatus,
+        reconnectRealtime,
       });
     }
 
-    if (!role || normalizedRoute === "/login") return h(Login, { onLogin: login, admins: data.admins, users: data.users, masterCreds: data.masterCreds });
+    if (!role || normalizedRoute === "/login") return h(Login, { onLogin: login, admins: data.admins, users: data.users, masterCreds: data.masterCreds, logoutReason });
     if (normalizedRoute === "/not-found") return h(NotFound);
 
     return h(Shell, {
@@ -2481,6 +2866,8 @@
       dbError,
       onDismissError: () => setDbError(null),
       currentUser,
+      realtimeStatus,
+      reconnectRealtime,
     });
   }
 
