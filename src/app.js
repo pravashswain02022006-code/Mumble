@@ -11,6 +11,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "./compon
 import "@fontsource-variable/inter";
 import "./styles.css";
 import "./theme.css";
+import mumbleLogo from "./assets/mumble-logo.svg";
 
 (function () {
   const { useEffect, useMemo, useState, useRef } = React;
@@ -550,6 +551,7 @@ import "./theme.css";
   // ── Loading / Error UI ─────────────────────────────────────────────────────
   function LoadingScreen() {
     return h("div", { className: "loading-screen" },
+      h(Logo, { alt: appName }),
       h(Skeleton, { className: "loading-spinner" }),
       h("p", null, "Connecting to Supabase…")
     );
@@ -690,8 +692,8 @@ import "./theme.css";
     return h(AppButton, { className: cx("icon-button", active && "active"), title: label, "aria-label": label, onClick }, children);
   }
 
-  function Logo() {
-    return h("div", { className: "brand-mark", "aria-label": appName }, h("span", null), h("span", null));
+  function Logo({ alt = "" } = {}) {
+    return h("img", { className: "brand-mark", src: mumbleLogo, alt, width: 40, height: 40 });
   }
 
   function Login({ onLogin, admins, users, masterCreds, logoutReason }) {
@@ -847,7 +849,7 @@ import "./theme.css";
 
     return h("div", { className: cx("app-shell", compact && "compact") },
       h("aside", { className: "rail" },
-        h(Logo),
+        h(Logo, { alt: appName }),
         h("div", { className: "rail-stack" },
           IconButton({ label: "Dashboard", active: !isSettings, onClick: () => navigate("/dashboards/home"), children: h(House, { "aria-hidden": true }) }),
           IconButton({ label: "Settings", active: isSettings, onClick: () => navigate("/settings/appearance"), children: h(Settings2, { "aria-hidden": true }) })

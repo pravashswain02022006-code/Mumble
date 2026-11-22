@@ -138,9 +138,7 @@ button.danger-button:hover:not(:disabled) { background: #fbe3e4; border-color: #
   color: #f6f8ff;
   padding: clamp(32px, 6vw, 94px);
 }
-.login-brand-name, .login-mobile-brand { display: flex; align-items: center; gap: 13px; font-size: 22px; font-weight: 750; }
-.login-brand .brand-mark { background: #e2eaff; }
-.login-brand .brand-mark span { background: #1d3c90; }
+.login-brand-name, .login-mobile-brand { display: flex; align-items: center; gap: 12px; font-size: 23px; font-weight: 760; letter-spacing: -.028em; }
 .login-brand-content { max-width: 32rem; padding-block: 16px clamp(25px, 7vw, 110px); }
 .login-headline { max-width: 12ch; margin: 24px 0 16px; font-size: clamp(36px, 4.7vw, 73px); line-height: 1.025; font-weight: 710; letter-spacing: -.038em; }
 .login-brand-description { max-width: 32ch; margin: 0; color: #dbe5ff; font-size: clamp(15px, 1.5vw, 19px); }
@@ -169,8 +167,6 @@ button.danger-button:hover:not(:disabled) { background: #fbe3e4; border-color: #
 .login-page .logout-reason-banner { z-index: 3; }
 
 /* Navigation and client workspace */
-.brand-mark { border-radius: 10px; background: var(--accent); }
-.brand-mark span { background: #eef3ff; }
 .app-shell { grid-template-columns: var(--rail-w) var(--sidebar-w) minmax(0, 1fr); }
 .rail { background: var(--surface-dark); border: 0; }
 .rail .icon-button { color: #dce6ff; border-radius: 10px; }
@@ -537,8 +533,6 @@ table .sort-head.active { color: #204aac; }
       url("./assets/blue-ledger-night.webp") right 40% / cover no-repeat #102450;
     color: #fff;
   }
-  .login-mobile-brand .brand-mark { background: #e2eaff; }
-  .login-mobile-brand .brand-mark span { background: #1d3c90; }
   .home-title {
     background:
       linear-gradient(90deg, #eaf0ff 0%, #eaf0ffed 52%, #eaf0ff92 100%),
@@ -550,9 +544,6 @@ table .sort-head.active { color: #204aac; }
 
 @media (max-width: 640px) {
   .login-page .login-workspace { align-items: start; padding-top: 88px; }
-  .brand-mark span { left: 27%; width: 52%; height: 25%; }
-  .brand-mark span:first-child { top: 22%; }
-  .brand-mark span:last-child { top: 55%; }
   .home-cards button { min-height: 124px; }
 }
 
@@ -654,3 +645,10 @@ button.header-refresh[aria-busy="true"] {
 
 .topbar-user { min-width: 0; }
 .topbar-username { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+
+.login-brand-name .brand-mark { width: 45px; height: 45px; }
+
+@media (max-width: 640px) {
+  .rail .brand-mark { width: 34px; height: 34px; }
+}

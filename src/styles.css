@@ -422,30 +422,11 @@ input:focus, select:focus {
 
 /* ─── Brand Mark ────────────────────────────────────────────────────────── */
 .brand-mark {
-  width: 36px;
-  height: 36px;
-  position: relative;
+  display: block;
+  width: 40px;
+  height: 40px;
   align-self: center;
   flex-shrink: 0;
-}
-
-.brand-mark span {
-  position: absolute;
-  left: 10px;
-  width: 19px;
-  height: 9px;
-  background: var(--black);
-  border-radius: 2px;
-  transform: rotate(45deg);
-}
-
-.brand-mark span:first-child {
-  top: 8px;
-}
-
-.brand-mark span:last-child {
-  top: 20px;
-  transform: rotate(-135deg);
 }
 
 /* ─── Rail Stack ────────────────────────────────────────────────────────── */
@@ -1476,10 +1457,6 @@ tbody tr:hover td {
     grid-template-columns: 1fr;
   }
 
-  .brand-mark {
-    width: 28px;
-    height: 28px;
-  }
 }
 
 /* ─── Role Badges ───────────────────────────────────────────────────────── */
