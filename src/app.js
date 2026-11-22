@@ -756,18 +756,21 @@ import "./theme.css";
           h("p", { className: "login-brand-description" }, "Find transactions, review settlements, and keep track of your records.")
         )
       ),
+      h("select", {
+        className: "login-role-picker",
+        "aria-label": "Sign in as",
+        value: loginRole,
+        onChange: (e) => { setLoginRole(e.target.value); setError(""); }
+      },
+        h("option", { value: "user" }, "User"),
+        h("option", { value: "admin" }, "Admin"),
+        h("option", { value: "masteradmin" }, "Master Admin")
+      ),
       h("div", { className: "login-workspace" },
       h("form", { className: "login-card", onSubmit: submit },
         h("div", { className: "login-mobile-brand" }, h(Logo), h("span", null, appName)),
         h("h1", { className: "title-" + loginRole }, titles[loginRole] || "Sign In"),
         h("p", null, subtitles[loginRole] || ""),
-        h("label", { className: "login-role-field" }, "Sign in as",
-          h("select", { value: loginRole, onChange: (e) => { setLoginRole(e.target.value); setError(""); } },
-            h("option", { value: "user" }, "User"),
-            h("option", { value: "admin" }, "Admin"),
-            h("option", { value: "masteradmin" }, "Master Admin")
-          )
-        ),
         h("label", null, "User ID", h(Input, {
           autoComplete: "username",
           placeholder: "Enter User ID",
@@ -2610,12 +2613,12 @@ import "./theme.css";
     return h("section", { className: "appearance" },
       h("div", { className: "settings-panel" },
         h("h2", null, "Appearance"),
-        h("p", null, "Mumble uses deep teal, light surfaces, and distinct colors for status messages."),
+        h("p", null, "Mumble uses royal blue, light surfaces, and distinct colors for status messages."),
         h("div", { className: "divider" }),
         h("h3", null, "Theme"),
         h("div", { className: "theme-cards" },
-          ["Dark teal", "Light sage"].map((name) => h(Card, { key: name, className: "theme-card" },
-            h("span", { className: cx("preview", name === "Dark teal" ? "black" : "white") }),
+          ["Midnight blue", "Ice blue"].map((name) => h(Card, { key: name, className: "theme-card" },
+            h("span", { className: cx("preview", name === "Midnight blue" ? "black" : "white") }),
             h("strong", null, name)
           ))
         ),
