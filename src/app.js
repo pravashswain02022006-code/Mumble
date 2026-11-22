@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, CircleAlert, CreditCard, House, LogOut, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, CircleAlert, CreditCard, Eye, EyeOff, House, LogOut, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
 import { AppButton } from "./components/controls";
 import { Input } from "./components/ui/input";
 import { Badge } from "./components/ui/badge";
@@ -698,6 +698,7 @@ import "./theme.css";
     const [loginRole, setLoginRole] = useState("user");
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
+    const [passwordVisible, setPasswordVisible] = useState(false);
     const [error, setError] = useState("");
     const titles = { user: "Welcome Back", admin: "Admin Access", masteradmin: "Master Admin" };
     const subtitles = { user: "Please sign in to continue", admin: "Sign in to manage records", masteradmin: "Full control access" };
@@ -777,13 +778,26 @@ import "./theme.css";
           value: username,
           onChange: (e) => setUsername(e.target.value),
         })),
-        h("label", null, "Password", h(Input, {
-          autoComplete: "current-password",
-          type: "password",
-          placeholder: "Enter Password",
-          value: password,
-          onChange: (e) => setPassword(e.target.value),
-        })),
+        h("div", { className: "login-password-field" },
+          h("label", { htmlFor: "login-password" }, "Password"),
+          h("div", { className: "login-password-control" },
+            h(Input, {
+              id: "login-password",
+              autoComplete: "current-password",
+              type: passwordVisible ? "text" : "password",
+              placeholder: "Enter Password",
+              value: password,
+              onChange: (e) => setPassword(e.target.value),
+            }),
+            h(AppButton, {
+              type: "button",
+              className: "login-password-toggle",
+              "aria-controls": "login-password",
+              "aria-label": passwordVisible ? "Hide password" : "Show password",
+              onClick: () => setPasswordVisible((visible) => !visible),
+            }, h(passwordVisible ? EyeOff : Eye, { "aria-hidden": true }))
+          )
+        ),
         error && h("div", { className: "error" }, error),
         h(AppButton, { className: "primary-button" }, "Sign In"),
         h("div", { className: "legal-links" },
