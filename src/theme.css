@@ -164,6 +164,21 @@ button.danger-button:hover:not(:disabled) { background: #fbe3e4; border-color: #
 .login-mobile-brand { display: none; }
 .login-card .legal-links { padding-top: 8px; color: var(--muted); }
 .login-card .error { margin-block: 0; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .login-error {
+    animation: login-error-shake 360ms ease-in-out;
+  }
+}
+
+@keyframes login-error-shake {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-5px); }
+  38% { transform: translateX(5px); }
+  58% { transform: translateX(-3px); }
+  78% { transform: translateX(2px); }
+}
+
 .login-page .logout-reason-banner { z-index: 3; }
 
 /* Navigation and client workspace */

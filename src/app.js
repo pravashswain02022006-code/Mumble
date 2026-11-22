@@ -701,7 +701,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
     const [username, setUsername] = useState("");
     const [password, setPassword] = useState("");
     const [passwordVisible, setPasswordVisible] = useState(false);
-    const [error, setError] = useState("");
+    const [failedAttempts, setFailedAttempts] = useState(0);
     const titles = { user: "Welcome Back", admin: "Admin Access", masteradmin: "Master Admin" };
     const subtitles = { user: "Please sign in to continue", admin: "Sign in to manage records", masteradmin: "Full control access" };
 
@@ -711,11 +711,11 @@ import mumbleLogo from "./assets/mumble-logo.svg";
         // masterCreds comes from Supabase master_config table
         const mc = masterCreds || { username: "masterLead", password: "Mumb!e@999" };
         if (username === mc.username && password === mc.password) {
-          setError("");
+          setFailedAttempts(0);
           onLogin("masteradmin");
           navigate("/admin");
         } else {
-          setError("Invalid ID or password");
+          setFailedAttempts((attempts) => attempts + 1);
         }
       } else if (loginRole === "admin") {
         // Check Supabase admin list only
@@ -723,11 +723,11 @@ import mumbleLogo from "./assets/mumble-logo.svg";
           return adm.username === username && adm.password === password;
         });
         if (found) {
-          setError("");
+          setFailedAttempts(0);
           onLogin("admin");
           navigate("/admin");
         } else {
-          setError("Invalid ID or password");
+          setFailedAttempts((attempts) => attempts + 1);
         }
       } else {
         // Client/User login checking database users
@@ -735,11 +735,11 @@ import mumbleLogo from "./assets/mumble-logo.svg";
           return usr.username === username && usr.password === password;
         });
         if (found) {
-          setError("");
+          setFailedAttempts(0);
           onLogin("user", found.id);
           navigate("/dashboards/home");
         } else {
-          setError("Invalid ID or password");
+          setFailedAttempts((attempts) => attempts + 1);
         }
       }
     }
@@ -763,7 +763,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
         className: "login-role-picker",
         "aria-label": "Sign in as",
         value: loginRole,
-        onChange: (e) => { setLoginRole(e.target.value); setError(""); }
+        onChange: (e) => { setLoginRole(e.target.value); setFailedAttempts(0); }
       },
         h("option", { value: "user" }, "User"),
         h("option", { value: "admin" }, "Admin"),
@@ -800,7 +800,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
             }, h(passwordVisible ? EyeOff : Eye, { "aria-hidden": true }))
           )
         ),
-        error && h("div", { className: "error" }, error),
+        failedAttempts > 0 && h("div", { key: failedAttempts, className: "error login-error", role: "alert" }, "Invalid ID or password"),
         h(AppButton, { className: "primary-button" }, "Sign In"),
         h("div", { className: "legal-links" },
           h("a", { href: "##" }, "Privacy Notice")
