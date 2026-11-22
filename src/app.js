@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, CircleAlert, CreditCard, House, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, CircleAlert, CreditCard, House, LogOut, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
 import { AppButton } from "./components/controls";
 import { Input } from "./components/ui/input";
 import { Badge } from "./components/ui/badge";
@@ -898,17 +898,25 @@ import "./theme.css";
           h("span", { className: "profile-display-name" }, displayName)
         )
       ),
-      h(AppButton, { onClick: () => navigate("/dashboards/userRole/settlement") },
-        h("span", { className: "tile-icon" }, "₹"),
-        h("strong", null, "Billing"),
-        h("small", null, "Settlement ledger")
+      h("div", { className: "profile-actions" },
+        h(AppButton, { className: "profile-action", onClick: () => navigate("/dashboards/userRole/settlement") },
+          h("span", { className: "tile-icon" }, h(Wallet, { "aria-hidden": true })),
+          h("span", { className: "profile-action-copy" },
+            h("strong", null, "Billing"),
+            h("small", null, "Settlement ledger")
+          )
+        ),
+        h(AppButton, { className: "profile-action", onClick: () => navigate("/settings/appearance") },
+          h("span", { className: "tile-icon" }, h(Settings2, { "aria-hidden": true })),
+          h("span", { className: "profile-action-copy" },
+            h("strong", null, "Settings"),
+            h("small", null, "Webapp settings")
+          )
+        )
       ),
-      h(AppButton, { onClick: () => navigate("/settings/appearance") },
-        h("span", { className: "tile-icon" }, "⚙"),
-        h("strong", null, "Settings"),
-        h("small", null, "Webapp settings")
-      ),
-      h(AppButton, { className: "logout", onClick: onLogout }, "↪ Logout")
+      h("div", { className: "profile-footer" },
+        h(AppButton, { className: "primary-button", onClick: onLogout }, h(LogOut, { "aria-hidden": true }), "Logout")
+      )
     );
   }
 
