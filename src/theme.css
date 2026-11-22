@@ -592,6 +592,7 @@ table .sort-head.active { color: #204aac; }
   width: 40px;
   height: 40px;
   padding: 0;
+  border: 0;
   color: var(--muted);
   background: transparent;
 }
