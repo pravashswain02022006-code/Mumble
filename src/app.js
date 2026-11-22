@@ -2820,7 +2820,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
       }
     }
 
-    function logout(reason) {
+    function endSession(reason = "") {
       setRole("");
       setCurrentUserId("");
       setSelectedClientId("");
@@ -2828,8 +2828,12 @@ import mumbleLogo from "./assets/mumble-logo.svg";
       localStorage.removeItem("mumble-current-user-id");
       localStorage.removeItem("mumble-selected-client-id");
       localStorage.removeItem("mumble-master-login-time");
-      if (reason) setLogoutReason(reason);
+      setLogoutReason(reason);
       navigate("/login");
+    }
+
+    function logout() {
+      endSession();
     }
 
     function resetDb() {
@@ -2867,7 +2871,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
 
       // Password was changed after this browser logged in → force logout immediately.
       if (changedAt > loggedInAt) {
-        logout("🔐 The Master Admin password has been changed. You have been logged out for security. Please log in again.");
+        endSession("🔐 The Master Admin password has been changed. You have been logged out for security. Please log in again.");
       }
     }, [role, data.masterCreds]);
 
