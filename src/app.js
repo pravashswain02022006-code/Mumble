@@ -1,3 +1,17 @@
+import * as React from "react";
+import { createRoot } from "react-dom/client";
+import { createClient } from "@supabase/supabase-js";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, CircleAlert, CreditCard, House, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
+import { AppButton } from "./components/controls";
+import { Input } from "./components/ui/input";
+import { Badge } from "./components/ui/badge";
+import { Card } from "./components/ui/card";
+import { Skeleton } from "./components/ui/skeleton";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
+import "@fontsource-variable/inter";
+import "./styles.css";
+import "./theme.css";
+
 (function () {
   const { useEffect, useMemo, useState, useRef } = React;
   const h = React.createElement;
@@ -9,7 +23,7 @@
   // ── Supabase config ────────────────────────────────────────────────────────
   const SUPABASE_URL = "https://qjfnytssuyhtkxdgszdg.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqZm55dHNzdXlodGt4ZGdzemRnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MTI3MjYsImV4cCI6MjA5NjM4ODcyNn0.ZWgVN7ucLKalBvMpmM8gH_ICpI4j0xide_tk0FvOMTE";
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   // Map Supabase rows (snake_case) → app objects (camelCase)
   function mapTxFromDb(row) {
@@ -281,21 +295,21 @@
       h("div", { className: "drm-box" },
         h("div", { className: "drm-header" },
           h("h3", null, "\uD83D\uDCE5 Download " + label),
-          h("button", { className: "drm-close", onClick: onClose }, "\u2715")
+          h(AppButton, { className: "drm-close", onClick: onClose }, "\u2715")
         ),
         h("p", { className: "drm-sub" }, "Select a date range to export records as an Excel-compatible sheet."),
         h("div", { className: "drm-fields" },
           h("label", null, "From date",
-            h("input", { type: "date", value: from, max: to || today, onChange: (e) => { setFrom(e.target.value); setErr(""); } })
+            h(Input, { type: "date", value: from, max: to || today, onChange: (e) => { setFrom(e.target.value); setErr(""); } })
           ),
           h("label", null, "To date",
-            h("input", { type: "date", value: to, min: from, max: today, onChange: (e) => { setTo(e.target.value); setErr(""); } })
+            h(Input, { type: "date", value: to, min: from, max: today, onChange: (e) => { setTo(e.target.value); setErr(""); } })
           )
         ),
         err && h("p", { className: "drm-error" }, err),
         h("div", { className: "drm-actions" },
-          h("button", { className: "secondary-button", onClick: onClose }, "Cancel"),
-          h("button", { className: "primary-button", onClick: handleDownload }, "\u2B07 Download")
+          h(AppButton, { className: "secondary-button", onClick: onClose }, "Cancel"),
+          h(AppButton, { className: "primary-button", onClick: handleDownload }, "\u2B07 Download")
         )
       )
     );
@@ -327,7 +341,7 @@
     return h("div", { className: "universal-search-wrap" },
       h("div", { className: "universal-search-bar" },
         h("span", { className: "usearch-icon" }, "\uD83D\uDD0D"),
-        h("input", {
+        h(Input, {
           className: "usearch-input",
           placeholder: "Search all clients, transactions, settlements...",
           value: query,
@@ -340,7 +354,7 @@
         !hasResults && h("p", { className: "ures-empty" }, "No results for \"" + query + "\""),
         txResults.length > 0 && h("div", null,
           h("div", { className: "ures-group-label" }, "Transactions"),
-          txResults.map(r => h("button", {
+          txResults.map(r => h(AppButton, {
             key: r.id, className: "ures-item",
             onMouseDown: () => { onSelectClient(r.clientId); setQuery(""); setOpen(false); }
           },
@@ -351,7 +365,7 @@
         ),
         stResults.length > 0 && h("div", null,
           h("div", { className: "ures-group-label" }, "Settlements"),
-          stResults.map(r => h("button", {
+          stResults.map(r => h(AppButton, {
             key: r.id, className: "ures-item",
             onMouseDown: () => { onSelectClient(r.clientId); setQuery(""); setOpen(false); }
           },
@@ -371,7 +385,7 @@
       h("div", { className: "drm-box history-modal" },
         h("div", { className: "drm-header" },
           h("h3", null, "\uD83D\uDCCB Edit History — " + record.id),
-          h("button", { className: "drm-close", onClick: onClose }, "\u2715")
+          h(AppButton, { className: "drm-close", onClick: onClose }, "\u2715")
         ),
         history.length === 0
           ? h("p", { className: "drm-sub" }, "No edit history yet. Edits will appear here after the audit columns are added in Supabase.")
@@ -396,7 +410,7 @@
             )
           ),
         h("div", { className: "drm-actions" },
-          h("button", { className: "secondary-button", onClick: onClose }, "Close")
+          h(AppButton, { className: "secondary-button", onClick: onClose }, "Close")
         )
       )
     );
@@ -475,7 +489,7 @@
           ),
           !hasRealAuditLog && derivedEntries.length > 0 && h("span", { style: { fontSize: "11px", color: "#6b7280", marginLeft: "8px", fontStyle: "italic" } }, "(live from records)")
         ),
-        h("button", { className: "secondary-button", onClick: () => setOpen(o => !o) }, open ? "⌃ Collapse" : "⌄ Expand")
+        h(AppButton, { className: "secondary-button", onClick: () => setOpen(o => !o) }, open ? "⌃ Collapse" : "⌄ Expand")
       ),
       open && h("div", null,
         h("div", { className: "feed-filters" },
@@ -536,7 +550,7 @@
   // ── Loading / Error UI ─────────────────────────────────────────────────────
   function LoadingScreen() {
     return h("div", { className: "loading-screen" },
-      h("div", { className: "loading-spinner" }),
+      h(Skeleton, { className: "loading-spinner" }),
       h("p", null, "Connecting to Supabase…")
     );
   }
@@ -545,7 +559,7 @@
     return h("div", { className: "db-error-banner" },
       h("span", { className: "db-error-icon" }, "⚠"),
       h("span", null, "Supabase unreachable — showing cached local data. ", h("strong", null, message)),
-      h("button", { onClick: onDismiss, "aria-label": "Dismiss" }, "✕")
+      h(AppButton, { onClick: onDismiss, "aria-label": "Dismiss" }, "✕")
     );
   }
 
@@ -562,7 +576,7 @@
       ),
       isReconnecting
         ? h("span", { className: "realtime-banner-spinner" }, "↺")
-        : h("button", { className: "realtime-reconnect-btn", onClick: onReconnect }, "↺ Reconnect Live")
+        : h(AppButton, { className: "realtime-reconnect-btn", onClick: onReconnect }, "↺ Reconnect Live")
     );
   }
 
@@ -673,7 +687,7 @@
   }
 
   function IconButton({ label, children, active, onClick }) {
-    return h("button", { className: cx("icon-button", active && "active"), title: label, "aria-label": label, onClick }, children);
+    return h(AppButton, { className: cx("icon-button", active && "active"), title: label, "aria-label": label, onClick }, children);
   }
 
   function Logo() {
@@ -732,33 +746,35 @@
         h("span", { className: "logout-reason-icon" }, "🔒"),
         h("span", { className: "logout-reason-text" }, logoutReason)
       ),
-      h("div", { className: "role-selector-wrap" },
-        h("div", { className: "role-selector" },
+      h("aside", { className: "login-brand" },
+        h("div", { className: "login-brand-name" }, h(Logo), h("span", null, appName)),
+        h("div", { className: "login-brand-content" },
+          h("div", { className: "login-ledger-motif", "aria-hidden": true },
+            h("span", null, h(ArrowDownLeft)), h("span", null, h(ArrowUpRight)), h("span", null, h(Wallet))
+          ),
+          h("p", { className: "login-headline" }, "Payments and settlements, in one place."),
+          h("p", { className: "login-brand-description" }, "Find transactions, review settlements, and keep track of your records.")
+        )
+      ),
+      h("div", { className: "login-workspace" },
+      h("form", { className: "login-card", onSubmit: submit },
+        h("div", { className: "login-mobile-brand" }, h(Logo), h("span", null, appName)),
+        h("h1", { className: "title-" + loginRole }, titles[loginRole] || "Sign In"),
+        h("p", null, subtitles[loginRole] || ""),
+        h("label", { className: "login-role-field" }, "Sign in as",
           h("select", { value: loginRole, onChange: (e) => { setLoginRole(e.target.value); setError(""); } },
             h("option", { value: "user" }, "User"),
             h("option", { value: "admin" }, "Admin"),
             h("option", { value: "masteradmin" }, "Master Admin")
-          ),
-          h("div", { className: cx("role-display", "role-display-" + loginRole), "aria-hidden": true },
-            loginRole === "user" ? "User" : loginRole === "admin" ? "Admin" : "Master Admin",
-            h("svg", { className: "role-chevron", width: "18", height: "12", viewBox: "0 0 18 12", fill: "none", xmlns: "http://www.w3.org/2000/svg" },
-              h("path", { d: "M2 2.5L9 9.5L16 2.5", stroke: "currentColor", strokeWidth: "3", strokeLinecap: "round", strokeLinejoin: "round" })
-            )
           )
-        )
-      ),
-      h("form", { className: "login-card", onSubmit: submit },
-        h(Logo),
-        h("h1", null, appName),
-        h("h2", { className: "title-" + loginRole }, titles[loginRole] || "Sign In"),
-        h("p", null, subtitles[loginRole] || ""),
-        h("label", null, "User ID", h("input", {
+        ),
+        h("label", null, "User ID", h(Input, {
           autoComplete: "username",
           placeholder: "Enter User ID",
           value: username,
           onChange: (e) => setUsername(e.target.value),
         })),
-        h("label", null, "Password", h("input", {
+        h("label", null, "Password", h(Input, {
           autoComplete: "current-password",
           type: "password",
           placeholder: "Enter Password",
@@ -766,11 +782,11 @@
           onChange: (e) => setPassword(e.target.value),
         })),
         error && h("div", { className: "error" }, error),
-        h("button", { className: "primary-button" }, "Sign In"),
+        h(AppButton, { className: "primary-button" }, "Sign In"),
         h("div", { className: "legal-links" },
           h("a", { href: "##" }, "Privacy Notice")
         )
-      )
+      ))
     );
   }
 
@@ -816,10 +832,10 @@
       h("aside", { className: "rail" },
         h(Logo),
         h("div", { className: "rail-stack" },
-          IconButton({ label: "Dashboard", active: !isSettings, onClick: () => navigate("/dashboards/home"), children: "⌂" }),
-          IconButton({ label: "Settings", active: isSettings, onClick: () => navigate("/settings/appearance"), children: "⚙" })
+          IconButton({ label: "Dashboard", active: !isSettings, onClick: () => navigate("/dashboards/home"), children: h(House, { "aria-hidden": true }) }),
+          IconButton({ label: "Settings", active: isSettings, onClick: () => navigate("/settings/appearance"), children: h(Settings2, { "aria-hidden": true }) })
         ),
-        h("button", { className: "avatar-dot", title: displayName, onClick: () => setProfileOpen(!profileOpen) }, initials)
+        h(AppButton, { className: "avatar-dot", title: displayName, onClick: () => setProfileOpen(!profileOpen) }, initials)
       ),
       h("aside", { className: "sidebar" },
         h("h1", null, isSettings ? "Settings" : appName),
@@ -828,30 +844,31 @@
         ),
         isSettings
           ? h(React.Fragment, null,
-            h("button", { className: "side-link active", onClick: () => navigate("/settings/appearance") }, "Appearance"),
+            h(AppButton, { className: "side-link active", onClick: () => navigate("/settings/appearance") }, "Appearance"),
             h("a", { className: "side-link", href: "mailto:help@mumble.local" }, "Ask a Question")
           )
-          : nav.map(([href, label]) => h("button", {
+          : nav.map(([href, label]) => h(AppButton, {
             key: href,
             className: cx("side-link", route === href && "active"),
+            "aria-current": route === href ? "page" : undefined,
             onClick: () => navigate(href),
           }, label)),
         h("div", { className: "sidebar-bottom" },
-          h("button", { className: cx("mode", !compact && "active"), onClick: toggleDensity }, "Comfort"),
-          h("button", { className: cx("mode", compact && "active"), onClick: toggleDensity }, "Compact")
+          h(AppButton, { className: cx("mode", !compact && "active"), onClick: toggleDensity }, "Comfort"),
+          h(AppButton, { className: cx("mode", compact && "active"), onClick: toggleDensity }, "Compact")
         )
       ),
       h("header", { className: "topbar" },
         h("div", { className: "topbar-user" },
           h("span", { className: "topbar-username" }, displayName)
         ),
-        h("button", {
+        h(AppButton, {
           className: "refresh-data-btn",
           onClick: handleShellRefresh,
           disabled: shellRefreshing,
           title: "Refresh data from server"
         }, shellRefreshing ? "↺ Refreshing…" : "↺ Refresh"),
-        h("button", { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, initials)
+        h(AppButton, { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, initials)
       ),
       profileOpen && h(ProfileMenu, { onLogout, currentUser }),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
@@ -878,23 +895,23 @@
           h("span", { className: "profile-display-name" }, displayName)
         )
       ),
-      h("button", { onClick: () => navigate("/dashboards/userRole/settlement") },
+      h(AppButton, { onClick: () => navigate("/dashboards/userRole/settlement") },
         h("span", { className: "tile-icon" }, "₹"),
         h("strong", null, "Billing"),
         h("small", null, "Settlement ledger")
       ),
-      h("button", { onClick: () => navigate("/settings/appearance") },
+      h(AppButton, { onClick: () => navigate("/settings/appearance") },
         h("span", { className: "tile-icon" }, "⚙"),
         h("strong", null, "Settings"),
         h("small", null, "Webapp settings")
       ),
-      h("button", { className: "logout", onClick: onLogout }, "↪ Logout")
+      h(AppButton, { className: "logout", onClick: onLogout }, "↪ Logout")
     );
   }
 
   function Breadcrumb({ current }) {
     return h("nav", { className: "crumbs" },
-      h("button", { onClick: () => navigate("/dashboards/home") }, appName),
+      h(AppButton, { onClick: () => navigate("/dashboards/home") }, appName),
       h("span", null, "›"),
       h("span", null, current)
     );
@@ -903,8 +920,6 @@
   function Home({ currentUser, onRefreshData }) {
     const [refreshing, setRefreshing] = useState(false);
     const displayName = currentUser ? currentUser.username : "User";
-    const userId = currentUser ? currentUser.id : "";
-
     async function handleRefresh() {
       setRefreshing(true);
       if (onRefreshData) await onRefreshData();
@@ -917,8 +932,8 @@
           h("span", { className: "home-welcome" }, "Welcome back,"),
           h("strong", { className: "home-username" }, displayName)
         ),
-        h("h2", null, "Payment and settlement control panel"),
-        h("button", {
+        h("h2", null, "Payments and settlements"),
+        h(AppButton, {
           className: "refresh-btn",
           onClick: handleRefresh,
           disabled: refreshing,
@@ -926,30 +941,27 @@
         }, refreshing ? "↺ Refreshing…" : "↺ Refresh Data")
       ),
       h("div", { className: "home-cards" },
-        h("button", { className: "home-card-tx", onClick: () => navigate("/dashboards/userRole/transaction") },
-          h("span", { className: "home-card-icon" }, "💳"),
+        h(AppButton, { className: "home-card-tx", onClick: () => navigate("/dashboards/userRole/transaction") },
+          h("span", { className: "home-card-icon" }, h(CreditCard, { "aria-hidden": true })),
           h("strong", null, "Recent Transactions"),
-          h("span", null, "Review incoming payment entries")
+          h("span", null, "Review incoming payment entries"), h(ArrowRight, { className: "home-card-arrow", "aria-hidden": true })
         ),
-        h("button", { className: "home-card-st", onClick: () => navigate("/dashboards/userRole/settlement") },
-          h("span", { className: "home-card-icon" }, "₹"),
+        h(AppButton, { className: "home-card-st", onClick: () => navigate("/dashboards/userRole/settlement") },
+          h("span", { className: "home-card-icon" }, h(Wallet, { "aria-hidden": true })),
           h("strong", null, "Recent Settlement"),
-          h("span", null, "Track commission and payout lines")
+          h("span", null, "Track commission and payout lines"), h(ArrowRight, { className: "home-card-arrow", "aria-hidden": true })
         ),
-        h("button", { className: "home-card-hist", onClick: () => navigate("/dashboards/userRole/history/transaction") },
-          h("span", { className: "home-card-icon" }, "🔍"),
+        h(AppButton, { className: "home-card-hist", onClick: () => navigate("/dashboards/userRole/history/transaction") },
+          h("span", { className: "home-card-icon" }, h(Search, { "aria-hidden": true })),
           h("strong", null, "History Search"),
-          h("span", null, "Filter by amount or transaction ID")
+          h("span", null, "Filter by amount or transaction ID"), h(ArrowRight, { className: "home-card-arrow", "aria-hidden": true })
         )
       )
     );
   }
 
   function Stat({ label, value, tone }) {
-    let icon = "";
-    if (label.includes("Count")) icon = "💳 ";
-    if (label.includes("Amount")) icon = "₹ ";
-    return h("div", { className: cx("stat", tone) }, h("span", null, icon + label), h("strong", null, value));
+    return h(Card, { className: cx("stat", tone) }, h("span", null, label), h("strong", null, value));
   }
 
   // Shared summary shown on both Recent Transaction and Recent Settlement pages
@@ -969,25 +981,25 @@
 
   function Controls({ table, showQuery, onDownload, onRefreshData }) {
     return h("div", { className: "search-grid" },
-      h("label", null, "Amount", h("input", {
+      h("label", null, "Amount", h(Input, {
         inputMode: "numeric",
         placeholder: "Minimum amount",
         value: table.filters.amount,
         onChange: (e) => table.updateFilter("amount", e.target.value),
       })),
-      h("label", null, "Transaction Id", h("input", {
+      h("label", null, "Transaction Id", h(Input, {
         placeholder: "Enter Transaction Id",
         value: table.filters.id,
         onChange: (e) => table.updateFilter("id", e.target.value),
       })),
-      showQuery && h("label", null, "Search Text", h("input", {
+      showQuery && h("label", null, "Search Text", h(Input, {
         placeholder: "Payer, remark or VPA",
         value: table.filters.query,
         onChange: (e) => table.updateFilter("query", e.target.value),
       })),
-      h("label", null, "Date Range", h("input", { value: "2026-05-04 to 2026-06-04", readOnly: true })),
+      h("label", null, "Date Range", h(Input, { value: "2026-05-04 to 2026-06-04", readOnly: true })),
       h("div", { className: "control-actions" },
-        h("button", { className: "secondary-button", onClick: onDownload }, "Download Sheet")
+        h(AppButton, { className: "secondary-button", onClick: onDownload }, "Download Sheet")
       )
     );
   }
@@ -1009,18 +1021,18 @@
       h("select", { value: table.pageSize, onChange: (e) => table.setPageSize(e.target.value) },
         [5, 10, 20, 50, 100].map((size) => h("option", { key: size, value: size }, size))
       ),
-      h("button", { disabled: table.page === 1, onClick: () => table.setPage(1) }, "«"),
-      h("button", { disabled: table.page === 1, onClick: () => table.setPage(table.page - 1) }, "‹"),
-      pageButtons.map((n) => h("button", { key: n, className: n === table.page ? "active" : "", onClick: () => table.setPage(n) }, n)),
-      h("button", { disabled: table.page === table.pages, onClick: () => table.setPage(table.page + 1) }, "›"),
-      h("button", { disabled: table.page === table.pages, onClick: () => table.setPage(table.pages) }, "»"),
+      h(AppButton, { disabled: table.page === 1, onClick: () => table.setPage(1) }, "«"),
+      h(AppButton, { disabled: table.page === 1, onClick: () => table.setPage(table.page - 1) }, "‹"),
+      pageButtons.map((n) => h(AppButton, { key: n, className: n === table.page ? "active" : "", onClick: () => table.setPage(n) }, n)),
+      h(AppButton, { disabled: table.page === table.pages, onClick: () => table.setPage(table.page + 1) }, "›"),
+      h(AppButton, { disabled: table.page === table.pages, onClick: () => table.setPage(table.pages) }, "»"),
       h("span", { className: "pager-info" }, `Page ${table.page} of ${table.pages}`)
     );
   }
 
   function SortHeader({ label, keyName, table }) {
     const active = table.sort.key === keyName;
-    return h("button", { className: cx("sort-head", active && "active"), onClick: () => table.toggleSort(keyName) },
+    return h(AppButton, { className: cx("sort-head", active && "active"), onClick: () => table.toggleSort(keyName) },
       label, active ? (table.sort.direction === "asc" ? " ↑" : " ↓") : ""
     );
   }
@@ -1032,25 +1044,25 @@
 
     return h("div", { className: "table-wrap" },
       h("table", null,
-        h("thead", null, h("tr", null, heads.map(([label, key]) => h("th", { key }, h(SortHeader, { label, keyName: key, table }))))),
-        h("tbody", null,
+        h(TableHeader, null, h(TableRow, null, heads.map(([label, key]) => h(TableHead, { key }, h(SortHeader, { label, keyName: key, table }))))),
+        h(TableBody, null,
           table.rows.length === 0
-            ? h("tr", null, h("td", { colSpan: heads.length, className: "empty-row" }, "No records match the current filters."))
+            ? h(TableRow, null, h(TableCell, { colSpan: heads.length, className: "empty-row" }, "No records match the current filters."))
             : table.rows.map((row) => type === "transaction"
-              ? h("tr", { key: row.id },
-                h("td", { className: "text-green" }, money(row.amount, true)),
-                h("td", { className: "transaction-id" }, row.id),
-                h("td", null, row.vpa),
-                h("td", null, row.payer),
-                h("td", null, row.remark || "—"),
-                h("td", null, row.date)
+              ? h(TableRow, { key: row.id },
+                h(TableCell, { className: "text-green" }, money(row.amount, true)),
+                h(TableCell, { className: "transaction-id" }, row.id),
+                h(TableCell, null, row.vpa),
+                h(TableCell, null, row.payer),
+                h(TableCell, null, row.remark || "—"),
+                h(TableCell, null, row.date)
               )
-              : h("tr", { key: row.id },
-                h("td", { className: "text-green" }, money(row.amount, false)),
-                h("td", { className: "transaction-id" }, row.id),
-                h("td", { className: "text-red" }, money(row.paid, true)),
-                h("td", null, row.remark || "—"),
-                h("td", null, row.date)
+              : h(TableRow, { key: row.id },
+                h(TableCell, { className: "text-green" }, money(row.amount, false)),
+                h(TableCell, { className: "transaction-id" }, row.id),
+                h(TableCell, { className: "text-red" }, money(row.paid, true)),
+                h(TableCell, null, row.remark || "—"),
+                h(TableCell, null, row.date)
               )
             )
         )
@@ -1119,14 +1131,14 @@
               h("option", { value: "desc" }, "Newest to Oldest"),
               h("option", { value: "asc" }, "Oldest to Newest")
             ),
-            h("button", {
+            h(AppButton, {
               className: cx("refresh-btn", refreshing && "refreshing"),
               onClick: handleRefresh,
               disabled: refreshing,
               title: "Refresh from server"
             }, refreshing ? "↺…" : "↺ Refresh"),
             h(LastUpdated, { table }),
-            h("button", { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download Records")
+            h(AppButton, { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download Records")
           )
         ),
         mode === "recent"
@@ -1200,14 +1212,14 @@
               h("option", { value: "desc" }, "Newest to Oldest"),
               h("option", { value: "asc" }, "Oldest to Newest")
             ),
-            h("button", {
+            h(AppButton, {
               className: cx("refresh-btn", refreshing && "refreshing"),
               onClick: handleRefresh,
               disabled: refreshing,
               title: "Refresh from server"
             }, refreshing ? "↺…" : "↺ Refresh"),
             h(LastUpdated, { table }),
-            h("button", { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download Records")
+            h(AppButton, { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download Records")
           )
         ),
         mode === "recent"
@@ -1395,8 +1407,8 @@
           h("h2", null, type === "transaction" ? "Transactions" : "Settlements")
         ),
         h("div", { className: "panel-title-right" },
-          h("button", { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download"),
-          canEdit && editingId && h("button", { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); setSaveError(""); } }, "Cancel Edit")
+          h(AppButton, { className: "dl-range-btn", onClick: () => setShowDlModal(true) }, "⬇ Download"),
+          canEdit && editingId && h(AppButton, { className: "secondary-button", onClick: () => { setEditingId(""); setForm(empty); setSaveError(""); } }, "Cancel Edit")
         )
       ),
       h("form", { className: cx("admin-form", type === "settlement" && "admin-form-settlement"), onSubmit: submit },
@@ -1415,7 +1427,7 @@
             return h("label", { key },
               h("span", { className: "commission-label-row" },
                 label,
-                h("button", {
+                h(AppButton, {
                   type: "button",
                   className: "commission-lock-btn",
                   title: commissionUnlocked ? "Lock commission" : "Unlock to edit commission",
@@ -1423,7 +1435,7 @@
                 }, commissionUnlocked ? "🔓 Unlock" : "🔒 Locked")
               ),
               h("div", { className: "percent-input-wrap" },
-                h("input", {
+                h(Input, {
                   className: "percent-input",
                   type: "number",
                   inputMode: "decimal",
@@ -1432,7 +1444,7 @@
                   step: "0.01",
                   required: true,
                   readOnly: !commissionUnlocked,
-                  placeholder: "e.g. 3",
+                  placeholder: "e.g. 2.5",
                   value: recordValue(form, key),
                   onChange: (e) => {
                     if (!commissionUnlocked) return;
@@ -1447,7 +1459,7 @@
           if (key === "date") {
             return h("label", { key },
               label,
-              h("input", {
+              h(Input, {
                 value: recordValue(form, key),
                 readOnly: true,
                 className: "calc-field",
@@ -1459,7 +1471,7 @@
           // UTR / Transaction ID: exactly 12 digits after the '#'
           if (key === "id") {
             return h("label", { key }, label,
-              h("input", {
+              h(Input, {
                 required: true,
                 value: recordValue(form, key),
                 inputMode: "numeric",
@@ -1468,6 +1480,7 @@
                 title: "Must be exactly 12 digits",
                 placeholder: "12-digit UTR number",
                 className: utrError ? "input-error" : "",
+                "aria-invalid": !!utrError,
                 onKeyDown: (e) => {
                   const allowed = ["Backspace", "Delete", "Tab", "Escape", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"];
                   if (allowed.includes(e.key)) return;
@@ -1512,7 +1525,7 @@
               (users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
             ));
           }
-          return h("label", { key }, label, h("input", {
+          return h("label", { key }, label, h(Input, {
             required: key === "amount" || key === "paid",
             value: recordValue(form, key),
             onChange: (e) => update(key, e.target.value),
@@ -1520,7 +1533,7 @@
         }),
         type === "settlement" && h("label", { key: "commissionAmount" },
           "Commission Amount",
-          h("input", {
+          h(Input, {
             value: autoCommission > 0 || parseFloat(form.paid) > 0 ? autoCommission.toFixed(2) : "",
             readOnly: true,
             className: "calc-field",
@@ -1530,7 +1543,7 @@
         ),
         type === "settlement" && h("label", { key: "totalAmount" },
           "Total Amount",
-          h("input", {
+          h(Input, {
             value: autoAmount > 0 || parseFloat(form.paid) > 0 ? autoAmount.toFixed(2) : "",
             readOnly: true,
             className: "calc-field",
@@ -1538,13 +1551,13 @@
             tabIndex: -1,
           })
         ),
-        h("button", { className: "primary-button", disabled: saving || !!utrError }, saving ? "Saving…" : (canEdit && editingId ? "Update Record" : "Add Record")),
+        h(AppButton, { className: "primary-button", disabled: saving || !!utrError }, saving ? "Saving…" : (canEdit && editingId ? "Update Record" : "Add Record")),
         saveError && h("div", { className: "admin-pw-error" }, saveError)
       ),
       h("div", { className: "admin-table-wrap" },
         isMaster && records.length > 0 && h("div", { className: "bulk-action-bar", style: { display: selectedIds.size > 0 ? "flex" : "none" } },
           h("span", null, selectedIds.size + " selected"),
-          h("button", {
+          h(AppButton, {
             className: "dl-range-btn", onClick: () => {
               const sel = records.filter(r => selectedIds.has(r.id));
               const isT = type === "transaction";
@@ -1553,7 +1566,7 @@
               downloadCsv("mumble-selected-" + type + "s.csv", headers, rows);
             }
           }, "⬇ Export Selected"),
-          h("button", {
+          h(AppButton, {
             className: "danger-button", onClick: () => {
               if (window.confirm("Delete " + selectedIds.size + " record(s)?")) {
                 Array.from(selectedIds).forEach(id => onDelete(id));
@@ -1561,14 +1574,14 @@
               }
             }
           }, "🗑 Delete Selected"),
-          h("button", { className: "secondary-button", onClick: () => setSelectedIds(new Set()) }, "Clear")
+          h(AppButton, { className: "secondary-button", onClick: () => setSelectedIds(new Set()) }, "Clear")
         ),
         h("table", null,
-          h("thead", null,
-            h("tr", null,
-              isMaster && h("th", null, h("input", { type: "checkbox", checked: allSelected, onChange: toggleSelectAll })),
-              tableFields.map((field) => h("th", { key: field[0] }, field[1])),
-              (canEdit || canDelete) && h("th", null, "Actions")
+          h(TableHeader, null,
+            h(TableRow, null,
+              isMaster && h(TableHead, null, h("input", { type: "checkbox", checked: allSelected, onChange: toggleSelectAll })),
+              tableFields.map((field) => h(TableHead, { key: field[0] }, field[1])),
+              (canEdit || canDelete) && h(TableHead, null, "Actions")
             ),
             (() => {
               // Mirror the same logic as globalTxTotal / globalStTotal:
@@ -1578,19 +1591,19 @@
               const totalAmount = liveRecords.reduce((s, r) => s + Number(r.amount || 0), 0);
               const totalCommission = type === "settlement" ? liveRecords.reduce((s, r) => s + Number(r.commissionAmount || 0), 0) : 0;
               const totalPaid = type === "settlement" ? liveRecords.reduce((s, r) => s + Number(r.paid || 0), 0) : 0;
-              return h("tr", { className: "th-totals-row" },
-                isMaster && h("th", null),
+              return h(TableRow, { className: "th-totals-row" },
+                isMaster && h(TableHead, null),
                 tableFields.map(([key]) => {
-                  if (key === "amount") return h("th", { key, className: "th-total text-green" }, money(totalAmount, true));
-                  if (key === "commissionAmount") return h("th", { key, className: "th-total text-purple" }, money(totalCommission, true));
-                  if (key === "paid") return h("th", { key, className: "th-total text-orange" }, money(totalPaid, true));
-                  return h("th", { key });
+                  if (key === "amount") return h(TableHead, { key, className: "th-total text-green" }, money(totalAmount, true));
+                  if (key === "commissionAmount") return h(TableHead, { key, className: "th-total text-purple" }, money(totalCommission, true));
+                  if (key === "paid") return h(TableHead, { key, className: "th-total text-orange" }, money(totalPaid, true));
+                  return h(TableHead, { key });
                 }),
-                (canEdit || canDelete) && h("th", null)
+                (canEdit || canDelete) && h(TableHead, null)
               );
             })()
           ),
-          h("tbody", null, records.map((record) => {
+          h(TableBody, null, records.map((record) => {
             const isDeleted = record.isDeleted;
             const isEdited = record.editHistory && record.editHistory.length > 0;
             const isCommMismatch = type === "settlement" && !record.isDeleted && (() => {
@@ -1603,26 +1616,26 @@
             else if (isCommMismatch) rowClass += "row-comm-mismatch ";
             else if (isEdited) rowClass += "edited-row-highlight ";
 
-            return h("tr", { key: record.id, className: rowClass.trim() },
-              isMaster && h("td", null, h("input", { type: "checkbox", checked: selectedIds.has(record.id), onChange: () => toggleSelect(record.id) })),
+            return h(TableRow, { key: record.id, className: rowClass.trim() },
+              isMaster && h(TableCell, null, h("input", { type: "checkbox", checked: selectedIds.has(record.id), onChange: () => toggleSelect(record.id) })),
               tableFields.map(([key]) => {
                 if (key === "commissionAmount" && isCommMismatch) {
-                  return h("td", { key, className: "comm-mismatch-cell" },
+                  return h(TableCell, { key, className: "comm-mismatch-cell" },
                     h("span", { className: "comm-mismatch-icon" }, "⚠"),
                     money(record.commissionAmount, true)
                   );
                 }
                 let val = key === "amount" || key === "commissionAmount" || key === "paid" ? money(record[key], key === "paid") : (key === "clientId" ? (users.find(u => u.id === record.clientId)?.username || record.clientId) : recordValue(record, key));
-                return h("td", { key }, val);
+                return h(TableCell, { key }, val);
               }),
-              (canEdit || canDelete) && h("td", { className: "row-actions" },
+              (canEdit || canDelete) && h(TableCell, { className: "row-actions" },
                 isDeleted ? (
-                  isMaster && h("button", { className: "primary-button", onClick: () => onRestore(record.id) }, "Restore")
+                  isMaster && h(AppButton, { className: "primary-button", onClick: () => onRestore(record.id) }, "Restore")
                 ) : (
                   h(React.Fragment, null,
-                    isEdited && isMaster && h("button", { className: "secondary-button", onClick: () => setHistoryRecord(record) }, "History"),
-                    canEdit && h("button", { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
-                    canDelete && h("button", { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
+                    isEdited && isMaster && h(AppButton, { className: "secondary-button", onClick: () => setHistoryRecord(record) }, "History"),
+                    canEdit && h(AppButton, { className: "secondary-button", onClick: () => edit(record) }, "Edit"),
+                    canDelete && h(AppButton, { className: "danger-button", onClick: () => onDelete(record.id) }, "Delete")
                   )
                 )
               )
@@ -1662,25 +1675,25 @@
       ),
       h("div", { className: "comm-issues-table-wrap" },
         h("table", null,
-          h("thead", null, h("tr", null,
-            h("th", null, "Settlement ID"),
-            h("th", null, "Paid Amount"),
-            h("th", null, "Rate"),
-            h("th", null, "Expected Commission"),
-            h("th", null, "Stored Commission"),
-            h("th", null, "Difference")
+          h(TableHeader, null, h(TableRow, null,
+            h(TableHead, null, "Settlement ID"),
+            h(TableHead, null, "Paid Amount"),
+            h(TableHead, null, "Rate"),
+            h(TableHead, null, "Expected Commission"),
+            h(TableHead, null, "Stored Commission"),
+            h(TableHead, null, "Difference")
           )),
-          h("tbody", null, mismatched.map(r => {
+          h(TableBody, null, mismatched.map(r => {
             const rate = parseCommissionRate(r.commission || DEFAULT_COMMISSION_LABEL);
             const expectedComm = parseFloat((Number(r.paid || 0) * rate).toFixed(2));
             const diff = Number(r.commissionAmount || 0) - expectedComm;
-            return h("tr", { key: r.id },
-              h("td", { className: "transaction-id" }, r.id),
-              h("td", null, money(r.paid, true)),
-              h("td", null, r.commission || DEFAULT_COMMISSION_LABEL),
-              h("td", null, money(expectedComm, true)),
-              h("td", { className: "text-red" }, money(r.commissionAmount, true)),
-              h("td", { className: diff < 0 ? "text-red" : "text-green" },
+            return h(TableRow, { key: r.id },
+              h(TableCell, { className: "transaction-id" }, r.id),
+              h(TableCell, null, money(r.paid, true)),
+              h(TableCell, null, r.commission || DEFAULT_COMMISSION_LABEL),
+              h(TableCell, null, money(expectedComm, true)),
+              h(TableCell, { className: "text-red" }, money(r.commissionAmount, true)),
+              h(TableCell, { className: diff < 0 ? "text-red" : "text-green" },
                 (diff < 0 ? "−" : "+") + money(Math.abs(diff), true)
               )
             );
@@ -1715,7 +1728,7 @@
             : clients.map((c, idx) => {
               const col = CLIENT_COLORS[idx % CLIENT_COLORS.length];
               const initials = (c.username || "?").split(/\s+/).map(w => w[0]).join("").toUpperCase().slice(0, 2);
-              return h("button", {
+              return h(AppButton, {
                 key: c.id,
                 className: "client-select-btn",
                 style: { borderColor: col.accent, background: col.bg },
@@ -1730,7 +1743,7 @@
             })
         ),
         h("div", { className: "client-select-footer" },
-          h("button", { className: "secondary-button", onClick: onLogout }, "Logout")
+          h(AppButton, { className: "secondary-button", onClick: onLogout }, "Logout")
         )
       )
     );
@@ -1929,13 +1942,13 @@
 
     // Global stats strip for master admin
     const globalStats = isMaster && h("div", { className: "master-global-stats" },
-      h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDCB3 Grand Transactions"), h("strong", { className: "text-green" }, money(globalTxTotal, true))),
-      h("div", { className: "mgs-card" }, h("span", null, "\u20B9 Grand Settlements"), h("strong", { className: "text-orange" }, money(globalStTotal, true))),
-      h("div", { className: "mgs-card" }, h("span", null, "\u2696 Grand Balance"), h("strong", { className: "text-red" }, money(globalBalance, true))),
-      h("div", { className: "mgs-card" }, h("span", null, "\uD83D\uDC65 Clients"), h("strong", null, (data.users || []).length)),
+      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(CreditCard, { "aria-hidden": true }), "Grand Transactions"), h("strong", { className: "text-green" }, money(globalTxTotal, true))),
+      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(Wallet, { "aria-hidden": true }), "Grand Settlements"), h("strong", { className: "text-orange" }, money(globalStTotal, true))),
+      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(Scale, { "aria-hidden": true }), "Grand Balance"), h("strong", { className: "text-red" }, money(globalBalance, true))),
+      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(Users, { "aria-hidden": true }), "Clients"), h("strong", null, (data.users || []).length)),
       h("div", { className: cx("mgs-card mgs-card-commission", commMismatch && "mgs-comm-mismatch-card") },
         h("div", { className: "mgs-comm-header" },
-          h("span", null, "\uD83D\uDCCA Total Commission Amount"),
+          h("span", { className: "metric-label" }, h(ChartColumn, { "aria-hidden": true }), "Total Commission Amount"),
           h("select", {
             className: "mgs-comm-filter",
             value: commCardClient,
@@ -1948,7 +1961,7 @@
         ),
         h("strong", { className: "text-purple" }, money(commCardTotalCommission, true)),
         commMismatch && h("div", { className: "comm-mismatch-alert" },
-          h("span", { className: "comm-alert-icon" }, "\u26A0\uFE0F"),
+          h(CircleAlert, { className: "comm-alert-icon", "aria-hidden": true }),
           h("div", null,
             h("strong", null, "Commission mismatch!"),
             h("span", null, "Expected " + DEFAULT_COMMISSION_LABEL + ": " + money(commExpected, true)),
@@ -1965,7 +1978,7 @@
       clientHealth.map((ch, idx) => {
         const col = CLIENT_COLORS[idx % CLIENT_COLORS.length];
         const initials = (ch.user.username || "?").slice(0, 2).toUpperCase();
-        return h("button", {
+        return h(AppButton, {
           key: ch.user.id,
           className: cx("client-health-card", selectedClientId === ch.user.id && "chc-active", ch.commMismatch && "chc-comm-mismatch"),
           style: { borderColor: ch.commMismatch ? "#ef4444" : col.accent },
@@ -1998,13 +2011,13 @@
 
     // Quick Action Sidebar
     const quickSidebar = isMaster && h(React.Fragment, null,
-      h("button", { className: "sidebar-toggle-btn", onClick: toggleSidebar, title: sidebarOpen ? "Close Sidebar" : "Quick Actions" },
-        sidebarOpen ? "\u00D7" : "\u26A1"
+      h(AppButton, { className: "sidebar-toggle-btn", onClick: toggleSidebar, title: sidebarOpen ? "Close Sidebar" : "Quick Actions", "aria-expanded": sidebarOpen },
+        h(sidebarOpen ? X : Zap, { "aria-hidden": true })
       ),
       sidebarOpen && h("div", { className: "quick-sidebar" },
         h("div", { className: "qs-header" },
-          h("h3", null, "\u26A1 Quick Actions"),
-          h("button", { className: "drm-close", onClick: toggleSidebar }, "\u00D7")
+          h("h3", null, "Quick Actions"),
+          h(AppButton, { className: "drm-close", onClick: toggleSidebar }, "\u00D7")
         ),
         h("div", { className: "qs-section" },
           h("p", { className: "qs-label" }, "Switch Client"),
@@ -2097,20 +2110,20 @@
             h("span", { className: "client-info-label" }, "Client:"),
             h("strong", { className: "client-info-name" }, clientObj.username || "None")
           ),
-          !isMaster && h("button", { className: "switch-client-btn", onClick: () => onSelectClient("") },
+          !isMaster && h(AppButton, { className: "switch-client-btn", onClick: () => onSelectClient("") },
             h("span", { className: "scb-label" }, "\u21C4 Switch Client")
           ),
-          isMaster && h("span", { className: "role-badge master" }, "Master Admin"),
-          !isMaster && h("span", { className: "role-badge" }, "Admin"),
+          isMaster && h(Badge, { className: "role-badge master" }, "Master Admin"),
+          !isMaster && h(Badge, { className: "role-badge" }, "Admin"),
           saving && h("span", { className: "saving-indicator" }, "Saving\u2026"),
-          h("button", {
+          h(AppButton, {
             className: "refresh-data-btn",
             onClick: handleAdminRefresh,
             disabled: adminRefreshing,
             title: "Refresh all data from server"
           }, adminRefreshing ? "↺ Refreshing…" : "↺ Refresh"),
-          h("button", { className: "secondary-button", onClick: () => onLogout() }, "User Portal"),
-          h("button", { className: "primary-button", onClick: onLogout }, "Logout")
+          h(AppButton, { className: "secondary-button", onClick: () => onLogout() }, "User Portal"),
+          h(AppButton, { className: "primary-button", onClick: onLogout }, "Logout")
         )
       ),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
@@ -2252,48 +2265,48 @@
     return h("section", { className: "admin-card admin-manager-card" },
       h("div", { className: "panel-title" },
         h("h2", null, "Manage Admins"),
-        editingId && h("button", { className: "secondary-button", onClick: function () { setEditingId(""); setForm(emptyAdmin); setError(""); } }, "Cancel Edit")
+        editingId && h(AppButton, { className: "secondary-button", onClick: function () { setEditingId(""); setForm(emptyAdmin); setError(""); } }, "Cancel Edit")
       ),
       h("form", { className: "admin-form admin-manager-form", onSubmit: submit },
-        h("label", null, "Username", h("input", {
+        h("label", null, "Username", h(Input, {
           required: true,
           placeholder: "e.g. admin004",
           value: form.username,
           onChange: function (e) { update("username", e.target.value); },
         })),
-        h("label", null, "Password", h("input", {
+        h("label", null, "Password", h(Input, {
           required: true,
           placeholder: "Min 8 chars, mixed case, digit, special",
           value: form.password,
           onChange: function (e) { update("password", e.target.value); },
         })),
-        h("button", { className: "primary-button" }, editingId ? "Update Admin" : "Add Admin"),
+        h(AppButton, { className: "primary-button" }, editingId ? "Update Admin" : "Add Admin"),
         error && h("div", { className: "admin-pw-error" }, error)
       ),
       h("div", { className: "admin-table-wrap" },
         h("table", null,
-          h("thead", null, h("tr", null,
-            h("th", null, "Username"),
-            h("th", null, "Password"),
-            h("th", null, "Created"),
-            h("th", null, "Actions")
+          h(TableHeader, null, h(TableRow, null,
+            h(TableHead, null, "Username"),
+            h(TableHead, null, "Password"),
+            h(TableHead, null, "Created"),
+            h(TableHead, null, "Actions")
           )),
-          h("tbody", null, sortedAdmins.map(function (admin) {
-            return h("tr", { key: admin.id },
-              h("td", null, admin.username),
-              h("td", { className: "password-cell" },
+          h(TableBody, null, sortedAdmins.map(function (admin) {
+            return h(TableRow, { key: admin.id },
+              h(TableCell, null, admin.username),
+              h(TableCell, { className: "password-cell" },
                 h("span", null, showPasswords[admin.id] ? admin.password : "••••••••"),
-                h("button", {
+                h(AppButton, {
                   type: "button",
                   className: "toggle-pw-btn",
                   onClick: function () { togglePassword(admin.id); },
                   title: showPasswords[admin.id] ? "Hide" : "Show"
                 }, showPasswords[admin.id] ? "🙈" : "👁")
               ),
-              h("td", null, admin.date),
-              h("td", { className: "row-actions" },
-                h("button", { className: "secondary-button", onClick: function () { edit(admin); } }, "Edit"),
-                h("button", { className: "danger-button", onClick: function () { remove(admin.id); } }, "Delete")
+              h(TableCell, null, admin.date),
+              h(TableCell, { className: "row-actions" },
+                h(AppButton, { className: "secondary-button", onClick: function () { edit(admin); } }, "Edit"),
+                h(AppButton, { className: "danger-button", onClick: function () { remove(admin.id); } }, "Delete")
               )
             );
           }))
@@ -2399,48 +2412,48 @@
     return h("section", { className: "admin-card admin-manager-card" },
       h("div", { className: "panel-title" },
         h("h2", null, "Manage Clients"),
-        editingId && h("button", { className: "secondary-button", onClick: function () { setEditingId(""); setForm(emptyUser); setError(""); } }, "Cancel Edit")
+        editingId && h(AppButton, { className: "secondary-button", onClick: function () { setEditingId(""); setForm(emptyUser); setError(""); } }, "Cancel Edit")
       ),
       h("form", { className: "admin-form admin-manager-form", onSubmit: submit },
-        h("label", null, "Username", h("input", {
+        h("label", null, "Username", h(Input, {
           required: true,
           placeholder: "e.g. user433",
           value: form.username,
           onChange: function (e) { update("username", e.target.value); },
         })),
-        h("label", null, "Password", h("input", {
+        h("label", null, "Password", h(Input, {
           required: true,
           placeholder: "Min 8 chars, mixed case, digit, special",
           value: form.password,
           onChange: function (e) { update("password", e.target.value); },
         })),
-        h("button", { className: "primary-button" }, editingId ? "Update Client" : "Add Client"),
+        h(AppButton, { className: "primary-button" }, editingId ? "Update Client" : "Add Client"),
         error && h("div", { className: "admin-pw-error" }, error)
       ),
       h("div", { className: "admin-table-wrap" },
         h("table", null,
-          h("thead", null, h("tr", null,
-            h("th", null, "Username"),
-            h("th", null, "Password"),
-            h("th", null, "Created"),
-            h("th", null, "Actions")
+          h(TableHeader, null, h(TableRow, null,
+            h(TableHead, null, "Username"),
+            h(TableHead, null, "Password"),
+            h(TableHead, null, "Created"),
+            h(TableHead, null, "Actions")
           )),
-          h("tbody", null, sortedUsers.map(function (user) {
-            return h("tr", { key: user.id },
-              h("td", null, user.username),
-              h("td", { className: "password-cell" },
+          h(TableBody, null, sortedUsers.map(function (user) {
+            return h(TableRow, { key: user.id },
+              h(TableCell, null, user.username),
+              h(TableCell, { className: "password-cell" },
                 h("span", null, showPasswords[user.id] ? user.password : "••••••••"),
-                h("button", {
+                h(AppButton, {
                   type: "button",
                   className: "toggle-pw-btn",
                   onClick: function () { togglePassword(user.id); },
                   title: showPasswords[user.id] ? "Hide" : "Show"
                 }, showPasswords[user.id] ? "🙈" : "👁")
               ),
-              h("td", null, user.date),
-              h("td", { className: "row-actions" },
-                h("button", { className: "secondary-button", onClick: function () { edit(user); } }, "Edit"),
-                h("button", { className: "danger-button", onClick: function () { remove(user.id); } }, "Delete")
+              h(TableCell, null, user.date),
+              h(TableCell, { className: "row-actions" },
+                h(AppButton, { className: "secondary-button", onClick: function () { edit(user); } }, "Edit"),
+                h(AppButton, { className: "danger-button", onClick: function () { remove(user.id); } }, "Delete")
               )
             );
           }))
@@ -2516,7 +2529,7 @@
         h("div", { className: "drm-box pw-change-confirm-box" },
           h("div", { className: "drm-header" },
             h("h3", null, "⚠️ Confirm Password Change"),
-            h("button", { className: "drm-close", onClick: function () { setShowConfirmModal(false); } }, "✕")
+            h(AppButton, { className: "drm-close", onClick: function () { setShowConfirmModal(false); } }, "✕")
           ),
           h("div", { className: "pw-change-warning" },
             h("div", { className: "pw-change-warning-icon" }, "🔐"),
@@ -2532,18 +2545,18 @@
             )
           ),
           h("div", { className: "drm-actions" },
-            h("button", { className: "secondary-button", onClick: function () { setShowConfirmModal(false); } }, "Cancel"),
-            h("button", { className: "danger-button", onClick: confirmSave }, "Yes, Change Password & Log Out Others")
+            h(AppButton, { className: "secondary-button", onClick: function () { setShowConfirmModal(false); } }, "Cancel"),
+            h(AppButton, { className: "danger-button", onClick: confirmSave }, "Yes, Change Password & Log Out Others")
           )
         )
       ),
       h("div", { className: "panel-title" },
         h("h2", null, "Master Admin Settings"),
-        h("p", { style: { margin: 0, fontSize: "0.85rem", opacity: 0.6 } }, "Change your own login credentials")
+        h("p", { className: "panel-description" }, "Change your own login credentials")
       ),
       h("form", { className: "admin-form admin-manager-form", onSubmit: submit },
         h("label", null, "New Username",
-          h("input", {
+          h(Input, {
             required: true,
             placeholder: "Enter new username",
             value: form.username,
@@ -2552,7 +2565,7 @@
         ),
         h("label", null, "New Password",
           h("div", { style: { position: "relative" } },
-            h("input", {
+            h(Input, {
               required: true,
               type: showPw ? "text" : "password",
               placeholder: "Min 8 chars, mixed case, digit, special",
@@ -2560,7 +2573,7 @@
               style: { paddingRight: "2.5rem", width: "100%", boxSizing: "border-box" },
               onChange: function (e) { update("password", e.target.value); }
             }),
-            h("button", {
+            h(AppButton, {
               type: "button",
               className: "toggle-pw-btn",
               style: { position: "absolute", right: "0.5rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: "1rem" },
@@ -2570,7 +2583,7 @@
           )
         ),
         h("label", null, "Confirm Password",
-          h("input", {
+          h(Input, {
             required: true,
             type: "password",
             placeholder: "Re-enter new password",
@@ -2578,7 +2591,7 @@
             onChange: function (e) { update("confirmPassword", e.target.value); }
           })
         ),
-        h("button", { className: "primary-button", disabled: saving }, saving ? "Saving…" : "Update My Credentials"),
+        h(AppButton, { className: "primary-button", disabled: saving }, saving ? "Saving…" : "Update My Credentials"),
         error && h("div", { className: "admin-pw-error" }, error),
         success && h("div", { className: "admin-pw-success" }, success)
       )
@@ -2597,35 +2610,35 @@
     return h("section", { className: "appearance" },
       h("div", { className: "settings-panel" },
         h("h2", null, "Appearance"),
-        h("p", null, "Mumble uses a black and white theme. Accent colors are reserved for positive, warning, and negative states."),
+        h("p", null, "Mumble uses deep teal, light surfaces, and distinct colors for status messages."),
         h("div", { className: "divider" }),
         h("h3", null, "Theme"),
         h("div", { className: "theme-cards" },
-          ["Black", "White"].map((name) => h("button", { key: name, className: "theme-card selected" },
-            h("span", { className: cx("preview", name.toLowerCase()) }),
+          ["Dark teal", "Light sage"].map((name) => h(Card, { key: name, className: "theme-card" },
+            h("span", { className: cx("preview", name === "Dark teal" ? "black" : "white") }),
             h("strong", null, name)
           ))
         ),
         h("h3", null, "Density"),
         h("div", { className: "control-grid" },
-          h("button", { className: !compact ? "selected" : "", onClick: compact ? toggleDensity : undefined }, "Comfortable"),
-          h("button", { className: compact ? "selected" : "", onClick: compact ? undefined : toggleDensity }, "Compact")
+          h(AppButton, { className: !compact ? "selected" : "", onClick: compact ? toggleDensity : undefined }, "Comfortable"),
+          h(AppButton, { className: compact ? "selected" : "", onClick: compact ? undefined : toggleDensity }, "Compact")
         ),
         h("h3", null, "Notification"),
         h("p", null, "Choose notification position and group style for your application."),
         h("div", { className: "control-grid" },
-          ["Stacked", "Expanded"].map((value) => h("button", {
+          ["Stacked", "Expanded"].map((value) => h(AppButton, {
             key: value,
             className: notifications === value ? "selected" : "",
             onClick: () => setStored("mumble-notifications", setNotifications, value),
           }, value)),
-          ["Top Right", "Bottom Right"].map((value) => h("button", {
+          ["Top Right", "Bottom Right"].map((value) => h(AppButton, {
             key: value,
             className: position === value ? "selected" : "",
             onClick: () => setStored("mumble-position", setPosition, value),
           }, value))
         ),
-        h("button", { className: "reset", onClick: onResetDb }, "Reset Local Data")
+        h(AppButton, { className: "reset", onClick: onResetDb }, "Reset Local Data")
       )
     );
   }
@@ -2635,7 +2648,7 @@
       h("div", { className: "four-oh-four" }, "404"),
       h("h2", null, "Oops. This Page Not Found."),
       h("p", null, "This page is not available. Please go back to home."),
-      h("button", { className: "primary-button", onClick: () => navigate("/dashboards/home") }, "Back to home")
+      h(AppButton, { className: "primary-button", onClick: () => navigate("/dashboards/home") }, "Back to home")
     );
   }
 
@@ -2888,5 +2901,5 @@
     });
   }
 
-  ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+  createRoot(document.getElementById("root")).render(h(App));
 })();
