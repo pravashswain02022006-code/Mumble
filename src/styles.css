@@ -984,15 +984,24 @@ tbody tr:hover td {
 }
 
 /* ─── Profile Menu ──────────────────────────────────────────────────────── */
-.profile-menu {
+.profile-menu-layer {
   position: fixed;
-  left: var(--rail-w);
-  bottom: 14px;
+  inset: 14px 8px 14px var(--rail-w);
   z-index: 4;
-  width: min(254px, calc(100vw - var(--rail-w) - 16px));
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.profile-menu {
+  width: min(254px, 100%);
+  max-block-size: 100%;
   border: 1px solid var(--black);
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
   background: white;
   box-shadow: 8px 8px 0 #000;
 }
@@ -1359,10 +1368,6 @@ tbody tr:hover td {
     padding: 16px;
   }
 
-  .profile-menu {
-    left: var(--rail-w);
-    width: min(254px, calc(100vw - var(--rail-w) - 8px));
-  }
 }
 
 /* ─── Responsive: ≤ 640px (mobile) ─────────────────────────────────────── */
@@ -1440,11 +1445,8 @@ tbody tr:hover td {
     box-shadow: 4px 4px 0 #000;
   }
 
-  .profile-menu {
-    left: 8px;
-    bottom: 8px;
-    width: calc(100vw - 16px);
-  }
+  .profile-menu-layer { inset: 8px; }
+  .profile-menu { width: 100%; }
 }
 
 /* ─── Responsive: ≤ 400px (very small) ─────────────────────────────────── */

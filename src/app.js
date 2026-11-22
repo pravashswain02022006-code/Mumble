@@ -902,31 +902,33 @@ import mumbleLogo from "./assets/mumble-logo.svg";
   function ProfileMenu({ onLogout, currentUser }) {
     const displayName = currentUser ? currentUser.username : "User";
     const initials = displayName.slice(0, 2).toUpperCase();
-    return h("section", { className: "profile-menu" },
-      h("div", { className: "profile-head" },
-        h("div", { className: "profile-pic" }, initials),
-        h("div", { className: "profile-head-info" },
-          h("span", { className: "profile-display-name" }, displayName)
-        )
-      ),
-      h("div", { className: "profile-actions" },
-        h(AppButton, { className: "profile-action", onClick: () => navigate("/dashboards/userRole/settlement") },
-          h("span", { className: "tile-icon" }, h(Wallet, { "aria-hidden": true })),
-          h("span", { className: "profile-action-copy" },
-            h("strong", null, "Billing"),
-            h("small", null, "Settlement ledger")
+    return h("div", { className: "profile-menu-layer" },
+      h("section", { className: "profile-menu" },
+        h("div", { className: "profile-head" },
+          h("div", { className: "profile-pic" }, initials),
+          h("div", { className: "profile-head-info" },
+            h("span", { className: "profile-display-name" }, displayName)
           )
         ),
-        h(AppButton, { className: "profile-action", onClick: () => navigate("/settings/appearance") },
-          h("span", { className: "tile-icon" }, h(Settings2, { "aria-hidden": true })),
-          h("span", { className: "profile-action-copy" },
-            h("strong", null, "Settings"),
-            h("small", null, "Webapp settings")
+        h("div", { className: "profile-actions" },
+          h(AppButton, { className: "profile-action", onClick: () => navigate("/dashboards/userRole/settlement") },
+            h("span", { className: "tile-icon" }, h(Wallet, { "aria-hidden": true })),
+            h("span", { className: "profile-action-copy" },
+              h("strong", null, "Billing"),
+              h("small", null, "Settlement ledger")
+            )
+          ),
+          h(AppButton, { className: "profile-action", onClick: () => navigate("/settings/appearance") },
+            h("span", { className: "tile-icon" }, h(Settings2, { "aria-hidden": true })),
+            h("span", { className: "profile-action-copy" },
+              h("strong", null, "Settings"),
+              h("small", null, "Webapp settings")
+            )
           )
+        ),
+        h("div", { className: "profile-footer" },
+          h(AppButton, { className: "primary-button", onClick: onLogout }, h(LogOut, { "aria-hidden": true }), "Logout")
         )
-      ),
-      h("div", { className: "profile-footer" },
-        h(AppButton, { className: "primary-button", onClick: onLogout }, h(LogOut, { "aria-hidden": true }), "Logout")
       )
     );
   }

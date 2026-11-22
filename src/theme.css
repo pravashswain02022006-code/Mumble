@@ -346,7 +346,6 @@ table .sort-head.active { color: #204aac; }
   .admin-header-actions { width: 100%; }
   .admin-header-actions .universal-search-wrap { max-width: none; }
   .admin-form { grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); }
-  .profile-menu { max-width: calc(100vw - 26px); }
   .panel-title-actions { width: 100%; }
 }
 
