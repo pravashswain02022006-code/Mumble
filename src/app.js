@@ -56,12 +56,6 @@ import mumbleLogo from "./assets/mumble-logo.svg";
   }
 
   // ── Master credentials helpers (Supabase-backed) ────────────────────────
-  async function fetchMasterCreds() {
-    const { data, error } = await supabase.from("master_config").select("*").eq("id", "master").single();
-    if (error || !data) return { username: "masterLead", password: "Mumb!e@999" };
-    return { username: data.username, password: data.password };
-  }
-
   async function saveMasterCredsToDb(creds, timestamp) {
     // Accept an explicit timestamp so the caller can write the same value
     // to localStorage BEFORE this function runs, eliminating any race window
@@ -110,7 +104,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
     if (admRes.error) throw new Error("admins: " + admRes.error.message);
     if (usrRes.error) throw new Error("users: " + usrRes.error.message);
 
-    let masterRow = { username: "masterLead", password: "Mumb!e@999" };
+    let masterRow = null;
     try {
       const masterRes = await supabase.from("master_config").select("*").eq("id", "master").single();
       if (masterRes.data) masterRow = masterRes.data;
@@ -138,7 +132,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
       deletedSettlements: deletedSt,
       admins: (admRes.data || []).map(mapAdminFromDb),
       users: (usrRes.data || []).map(mapUserFromDb),
-      masterCreds: { username: masterRow.username, password: masterRow.password, password_changed_at: masterRow.password_changed_at || null },
+      masterCreds: masterRow ? { username: masterRow.username, password: masterRow.password, password_changed_at: masterRow.password_changed_at || null } : null,
       auditLog,
     };
   }
@@ -702,46 +696,35 @@ import mumbleLogo from "./assets/mumble-logo.svg";
     const [password, setPassword] = useState("");
     const [passwordVisible, setPasswordVisible] = useState(false);
     const [failedAttempts, setFailedAttempts] = useState(0);
+    const [matchingProfiles, setMatchingProfiles] = useState([]);
+    const profileLabels = { user: "User", admin: "Admin", masteradmin: "Master Admin" };
     const titles = { user: "Welcome Back", admin: "Admin Access", masteradmin: "Master Admin" };
     const subtitles = { user: "Please sign in to continue", admin: "Sign in to manage records", masteradmin: "Full control access" };
 
     function submit(e) {
       e.preventDefault();
-      if (loginRole === "masteradmin") {
-        // masterCreds comes from Supabase master_config table
-        const mc = masterCreds || { username: "masterLead", password: "Mumb!e@999" };
-        if (username === mc.username && password === mc.password) {
-          setFailedAttempts(0);
-          onLogin("masteradmin");
-          navigate("/admin");
-        } else {
-          setFailedAttempts((attempts) => attempts + 1);
-        }
-      } else if (loginRole === "admin") {
-        // Check Supabase admin list only
-        const found = (admins || []).find(function (adm) {
-          return adm.username === username && adm.password === password;
-        });
-        if (found) {
-          setFailedAttempts(0);
-          onLogin("admin");
-          navigate("/admin");
-        } else {
-          setFailedAttempts((attempts) => attempts + 1);
-        }
-      } else {
-        // Client/User login checking database users
-        const found = (users || []).find(function (usr) {
-          return usr.username === username && usr.password === password;
-        });
-        if (found) {
-          setFailedAttempts(0);
-          onLogin("user", found.id);
-          navigate("/dashboards/home");
-        } else {
-          setFailedAttempts((attempts) => attempts + 1);
-        }
+      const matches = (account) => Boolean(
+        username && password && account &&
+        account.username === username && account.password === password
+      );
+      const accountsByProfile = {
+        user: (users || []).find(matches),
+        admin: (admins || []).find(matches),
+        masteradmin: matches(masterCreds) ? masterCreds : null,
+      };
+      const selectedAccount = accountsByProfile[loginRole];
+      if (selectedAccount) {
+        setFailedAttempts(0);
+        setMatchingProfiles([]);
+        onLogin(loginRole, loginRole === "user" ? selectedAccount.id : undefined);
+        navigate(loginRole === "user" ? "/dashboards/home" : "/admin");
+        return;
       }
+
+      const otherProfiles = Object.keys(accountsByProfile).filter((profile) => accountsByProfile[profile]);
+      setMatchingProfiles(otherProfiles);
+      if (otherProfiles.length) setFailedAttempts(0);
+      else setFailedAttempts((attempts) => attempts + 1);
     }
 
     return h("main", { className: cx("login-page", "bg-" + loginRole) },
@@ -763,22 +746,32 @@ import mumbleLogo from "./assets/mumble-logo.svg";
         className: "login-role-picker",
         "aria-label": "Sign in as",
         value: loginRole,
-        onChange: (e) => { setLoginRole(e.target.value); setFailedAttempts(0); }
+        onChange: (e) => {
+          setLoginRole(e.target.value);
+          setMatchingProfiles([]);
+          setFailedAttempts(0);
+        }
       },
-        h("option", { value: "user" }, "User"),
-        h("option", { value: "admin" }, "Admin"),
-        h("option", { value: "masteradmin" }, "Master Admin")
+        Object.entries(profileLabels).map(([value, label]) => h("option", { key: value, value }, label))
       ),
       h("div", { className: "login-workspace" },
       h("form", { className: "login-card", onSubmit: submit },
         h("div", { className: "login-mobile-brand" }, h(Logo), h("span", null, appName)),
         h("h1", { className: "title-" + loginRole }, titles[loginRole] || "Sign In"),
         h("p", null, subtitles[loginRole] || ""),
+        matchingProfiles.length > 0 && h("div", { className: "login-profile-notice", role: "alert" },
+          h(CircleAlert, { "aria-hidden": true }),
+          h("div", null,
+            h("strong", null, "You’re signing in as " + profileLabels[loginRole] + "."),
+            h("span", null, "Switch to " + matchingProfiles.map((profile) => profileLabels[profile]).join(" or ") +
+              " using the menu in the top-right corner, then sign in again.")
+          )
+        ),
         h("label", null, "User ID", h(Input, {
           autoComplete: "username",
           placeholder: "Enter User ID",
           value: username,
-          onChange: (e) => setUsername(e.target.value),
+          onChange: (e) => { setUsername(e.target.value); setMatchingProfiles([]); },
         })),
         h("div", { className: "login-password-field" },
           h("label", { htmlFor: "login-password" }, "Password"),
@@ -789,7 +782,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
               type: passwordVisible ? "text" : "password",
               placeholder: "Enter Password",
               value: password,
-              onChange: (e) => setPassword(e.target.value),
+              onChange: (e) => { setPassword(e.target.value); setMatchingProfiles([]); },
             }),
             h(AppButton, {
               type: "button",
@@ -800,7 +793,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
             }, h(passwordVisible ? EyeOff : Eye, { "aria-hidden": true }))
           )
         ),
-        failedAttempts > 0 && h("div", { key: failedAttempts, className: "error login-error", role: "alert" }, "Invalid ID or password"),
+        failedAttempts > 0 && h("div", { key: failedAttempts, className: "error login-error", role: "alert" }, "Username or password is incorrect."),
         h(AppButton, { className: "primary-button" }, "Sign In"),
         h("div", { className: "legal-links" },
           h("a", { href: "##" }, "Privacy Notice")
