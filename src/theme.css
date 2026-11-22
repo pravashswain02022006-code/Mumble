@@ -293,7 +293,15 @@ table .sort-head.active { color: #204aac; }
 .admin-header-actions .universal-search-wrap { flex: 1 1 220px; }
 .universal-results { border-radius: 14px; border-color: var(--line); box-shadow: 0 12px 35px #152c6820; }
 .universal-search-bar { background: #f5f8ff; }
-.universal-search-bar input.usearch-input { min-height: 26px; padding: 0; background: transparent; border: 0; }
+/* The outer search bar supplies the focus indicator for this field. */
+.universal-search-bar input.usearch-input {
+  min-height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
 .universal-search-bar:focus-within { border-color: var(--focus); }
 .role-badge, .role-badge.master { min-height: 26px; background: #e7edff; color: #1d4198; border: 1px solid #c9d8fa; }
 .admin-grid { gap: 24px; min-width: 0; }
