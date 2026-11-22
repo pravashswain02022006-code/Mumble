@@ -927,7 +927,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
           )
         ),
         h("div", { className: "profile-footer" },
-          h(AppButton, { className: "primary-button", onClick: onLogout }, h(LogOut, { "aria-hidden": true }), "Logout")
+          h(AppButton, { className: "danger-button", onClick: onLogout }, h(LogOut, { "aria-hidden": true }), "Logout")
         )
       )
     );
