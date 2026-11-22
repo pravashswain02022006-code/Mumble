@@ -760,11 +760,11 @@ import mumbleLogo from "./assets/mumble-logo.svg";
         h("h1", { className: "title-" + loginRole }, titles[loginRole] || "Sign In"),
         h("p", null, subtitles[loginRole] || ""),
         matchingProfiles.length > 0 && h("div", { className: "login-profile-notice", role: "alert" },
-          h(CircleAlert, { "aria-hidden": true }),
-          h("div", null,
-            h("strong", null, "You’re signing in as " + profileLabels[loginRole] + "."),
-            h("span", null, "Switch to " + matchingProfiles.map((profile) => profileLabels[profile]).join(" or ") +
-              " using the menu in the top-right corner, then sign in again.")
+          h("span", { className: "login-profile-notice-icon", "aria-hidden": true }, h(CircleAlert)),
+          h("div", { className: "login-profile-notice-copy" },
+            h("strong", null, "Switch to " + matchingProfiles.map((profile) => profileLabels[profile]).join(" or ")),
+            h("span", null, "You’re signing in as " + profileLabels[loginRole] + ". Your details match a different profile."),
+            h("span", { className: "login-profile-notice-instruction" }, "Use the profile menu in the top-right corner, then sign in again.")
           )
         ),
         h("label", null, "User ID", h(Input, {

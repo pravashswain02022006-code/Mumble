@@ -690,16 +690,35 @@ button.header-refresh[aria-busy="true"] {
 
 .login-profile-notice {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid #b5c7ed;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 15px;
+  border: 2px solid #b56b0d;
   border-radius: var(--control-radius);
-  background: #edf3ff;
-  color: #253e75;
+  background: #fff0cb;
+  box-shadow: 0 5px 14px #8c520820;
+  color: #5e360c;
   font-size: .875rem;
+  line-height: 1.45;
 }
 
-.login-profile-notice svg { width: 18px; height: 18px; margin-top: 2px; }
-.login-profile-notice strong, .login-profile-notice span { display: block; }
-.login-profile-notice span { margin-top: 3px; }
+.login-profile-notice-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #8a4c0c;
+  color: #fff;
+}
+
+.login-profile-notice-icon svg { width: 21px; height: 21px; }
+.login-profile-notice-copy { display: grid; gap: 4px; min-width: 0; }
+.login-profile-notice-copy strong {
+  color: #542b06;
+  font-size: 1.125rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.login-profile-notice-instruction { font-weight: 650; }
