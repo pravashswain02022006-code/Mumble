@@ -3,6 +3,8 @@
   const h = React.createElement;
 
   const appName = "Mumble";
+  const DEFAULT_COMMISSION_PERCENT = 2.5;
+  const DEFAULT_COMMISSION_LABEL = DEFAULT_COMMISSION_PERCENT + "%";
 
   // ── Supabase config ────────────────────────────────────────────────────────
   const SUPABASE_URL = "https://qjfnytssuyhtkxdgszdg.supabase.co";
@@ -14,7 +16,7 @@
     return { id: row.id, amount: Number(row.amount || 0), vpa: row.vpa || "", payer: row.payer || "", remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master, isDeleted: !!row.is_deleted, deletedAt: row.deleted_at || "", editHistory: row.edit_history || [] };
   }
   function mapStFromDb(row) {
-    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || "3%", commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master, isDeleted: !!row.is_deleted, deletedAt: row.deleted_at || "", editHistory: row.edit_history || [] };
+    return { id: row.id, amount: Number(row.amount || 0), commission: row.commission || DEFAULT_COMMISSION_LABEL, commissionAmount: Number(row.commission_amount || 0), paid: Number(row.paid || 0), remark: row.remark || "", date: row.date || "", clientId: row.client_id || "usr-001", addedByMaster: !!row.added_by_master, isDeleted: !!row.is_deleted, deletedAt: row.deleted_at || "", editHistory: row.edit_history || [] };
   }
   // Map app objects → Supabase rows
   function mapTxToDb(r) {
@@ -1240,7 +1242,7 @@
 
   function CrudManager({ type, records, deletedRecords, onSave, onDelete, onRestore, canEdit, canDelete, isMaster, users, showToast, onAuditLog }) {
     const emptyTransaction = { clientId: "", amount: "", id: "", vpa: "", payer: "", remark: "", date: nowLabel() };
-    const emptySettlement = { clientId: "", amount: "", id: "", commission: "3", paid: "", remark: "", date: nowLabel() };
+    const emptySettlement = { clientId: "", amount: "", id: "", commission: String(DEFAULT_COMMISSION_PERCENT), paid: "", remark: "", date: nowLabel() };
     const empty = type === "transaction" ? emptyTransaction : emptySettlement;
     const [form, setForm] = useState(empty);
     const [editingId, setEditingId] = useState("");
@@ -1592,7 +1594,7 @@
             const isDeleted = record.isDeleted;
             const isEdited = record.editHistory && record.editHistory.length > 0;
             const isCommMismatch = type === "settlement" && !record.isDeleted && (() => {
-              const rate = parseCommissionRate(record.commission || "3%");
+              const rate = parseCommissionRate(record.commission || DEFAULT_COMMISSION_LABEL);
               const expectedComm = parseFloat((Number(record.paid || 0) * rate).toFixed(2));
               return Math.abs(Number(record.commissionAmount || 0) - expectedComm) > 1;
             })();
@@ -1645,7 +1647,7 @@
   function CommissionIssuesPanel({ records }) {
     const mismatched = (records || []).filter(r => {
       if (r.isDeleted) return false;
-      const rate = parseCommissionRate(r.commission || "3%");
+      const rate = parseCommissionRate(r.commission || DEFAULT_COMMISSION_LABEL);
       const expectedComm = parseFloat((Number(r.paid || 0) * rate).toFixed(2));
       return Math.abs(Number(r.commissionAmount || 0) - expectedComm) > 1;
     });
@@ -1669,13 +1671,13 @@
             h("th", null, "Difference")
           )),
           h("tbody", null, mismatched.map(r => {
-            const rate = parseCommissionRate(r.commission || "3%");
+            const rate = parseCommissionRate(r.commission || DEFAULT_COMMISSION_LABEL);
             const expectedComm = parseFloat((Number(r.paid || 0) * rate).toFixed(2));
             const diff = Number(r.commissionAmount || 0) - expectedComm;
             return h("tr", { key: r.id },
               h("td", { className: "transaction-id" }, r.id),
               h("td", null, money(r.paid, true)),
-              h("td", null, r.commission || "3%"),
+              h("td", null, r.commission || DEFAULT_COMMISSION_LABEL),
               h("td", null, money(expectedComm, true)),
               h("td", { className: "text-red" }, money(r.commissionAmount, true)),
               h("td", { className: diff < 0 ? "text-red" : "text-green" },
@@ -1787,14 +1789,14 @@
     }, [data.settlements, commCardClient, registeredClientIds]);
     const commCardTotalCommission = useMemo(() => commCardSettlements.reduce((s, r) => s + Number(r.commissionAmount || 0), 0), [commCardSettlements]);
 
-    // Commission mismatch detection — expected = 3% of the relevant transaction base
+    // Compare stored settlement commission against the default rate on incoming transactions.
     const commCardTxBase = useMemo(() => {
       if (commCardClient) {
         return (data.transactions || []).filter(t => !t.isDeleted && t.clientId === commCardClient).reduce((s, t) => s + Number(t.amount || 0), 0);
       }
       return globalTxTotal;
     }, [commCardClient, data.transactions, globalTxTotal]);
-    const commExpected = commCardTxBase * 0.03;
+    const commExpected = commCardTxBase * (DEFAULT_COMMISSION_PERCENT / 100);
     // Allow ₹1 tolerance for floating-point rounding
     const commMismatch = commCardTxBase > 0 && Math.abs(commCardTotalCommission - commExpected) > 1;
 
@@ -1806,7 +1808,7 @@
         const cTxTotal = cTx.reduce((s, t) => s + Number(t.amount || 0), 0);
         const cStTotal = cSt.reduce((s, t) => s + Number(t.amount || 0), 0);
         const cCommTotal = cSt.reduce((s, st) => s + Number(st.commissionAmount || 0), 0);
-        const cCommExpected = cTxTotal * 0.03;
+        const cCommExpected = cTxTotal * (DEFAULT_COMMISSION_PERCENT / 100);
         const cCommMismatch = cTxTotal > 0 && Math.abs(cCommTotal - cCommExpected) > 1;
         const lastTx = cTx.slice().sort((a, b) => sortableValue(b, "date") - sortableValue(a, "date"))[0];
         return { user: u, txTotal: cTxTotal, stTotal: cStTotal, balance: cTxTotal - cStTotal, lastTx, commTotal: cCommTotal, commExpected: cCommExpected, commMismatch: cCommMismatch };
@@ -1949,7 +1951,7 @@
           h("span", { className: "comm-alert-icon" }, "\u26A0\uFE0F"),
           h("div", null,
             h("strong", null, "Commission mismatch!"),
-            h("span", null, "Expected 3%: " + money(commExpected, true)),
+            h("span", null, "Expected " + DEFAULT_COMMISSION_LABEL + ": " + money(commExpected, true)),
             h("span", { className: "comm-alert-diff" },
               (commCardTotalCommission < commExpected ? "\u2212" : "+") + money(Math.abs(commCardTotalCommission - commExpected), true) + " off"
             )
