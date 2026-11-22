@@ -2740,32 +2740,6 @@ tbody tr:hover td {
 }
 @keyframes rt-spin { to { transform: rotate(360deg); } }
 
-/* ─── Persistent Teal Refresh Button ──────────────────────────────────────── */
-.refresh-data-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #0891b2;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: background 0.15s, box-shadow 0.15s;
-  flex-shrink: 0;
-}
-.refresh-data-btn:hover:not(:disabled) {
-  background: #0e7490;
-  box-shadow: 0 0 0 3px rgba(8, 145, 178, 0.25);
-}
-.refresh-data-btn:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
 /* ─── UTR Duplicate Error ──────────────────────────────────────────────────── */
 .utr-error-msg {
   display: block;

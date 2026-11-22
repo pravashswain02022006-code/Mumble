@@ -2,7 +2,7 @@ import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
 import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, CircleAlert, CreditCard, Eye, EyeOff, House, LogOut, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
-import { AppButton } from "./components/controls";
+import { AppButton, HeaderRefreshButton } from "./components/controls";
 import { Input } from "./components/ui/input";
 import { Badge } from "./components/ui/badge";
 import { Card } from "./components/ui/card";
@@ -879,12 +879,7 @@ import "./theme.css";
         h("div", { className: "topbar-user" },
           h("span", { className: "topbar-username" }, displayName)
         ),
-        h(AppButton, {
-          className: "refresh-data-btn",
-          onClick: handleShellRefresh,
-          disabled: shellRefreshing,
-          title: "Refresh data from server"
-        }, shellRefreshing ? "↺ Refreshing…" : "↺ Refresh"),
+        h(HeaderRefreshButton, { refreshing: shellRefreshing, onClick: handleShellRefresh, title: "Refresh data from server" }),
         h(AppButton, { className: "header-avatar", onClick: () => setProfileOpen(!profileOpen), "aria-expanded": profileOpen }, initials)
       ),
       profileOpen && h(ProfileMenu, { onLogout, currentUser }),
@@ -2141,12 +2136,7 @@ import "./theme.css";
           isMaster && h(Badge, { className: "role-badge master" }, "Master Admin"),
           !isMaster && h(Badge, { className: "role-badge" }, "Admin"),
           saving && h("span", { className: "saving-indicator" }, "Saving\u2026"),
-          h(AppButton, {
-            className: "refresh-data-btn",
-            onClick: handleAdminRefresh,
-            disabled: adminRefreshing,
-            title: "Refresh all data from server"
-          }, adminRefreshing ? "↺ Refreshing…" : "↺ Refresh"),
+          h(HeaderRefreshButton, { refreshing: adminRefreshing, onClick: handleAdminRefresh, title: "Refresh all data from server" }),
           h(AppButton, { className: "secondary-button", onClick: () => onLogout() }, "User Portal"),
           h(AppButton, { className: "primary-button", onClick: onLogout }, "Logout")
         )

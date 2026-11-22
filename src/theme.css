@@ -95,7 +95,7 @@ input[type="checkbox"] {
 button:active:not(:disabled) { filter: brightness(.94); }
 :is(button, a).active, button.selected { font-weight: 700; }
 
-:is(.primary-button, .secondary-button, .danger-button, .refresh-data-btn, .dl-range-btn, .switch-client-btn) {
+:is(.primary-button, .secondary-button, .danger-button, .dl-range-btn, .switch-client-btn) {
   min-height: 40px;
   gap: 8px;
   padding: 8px 14px;
@@ -110,12 +110,12 @@ button.primary-button { background: var(--accent); border-color: var(--accent); 
 button.primary-button:hover:not(:disabled) { background: #193ba7; }
 button.danger-button { background: #fff4f3; border: 1px solid #e5b9bc; color: #9b2833; }
 button.danger-button:hover:not(:disabled) { background: #fbe3e4; border-color: #ca8188; }
-:is(button, select):is(.secondary-button, .refresh-data-btn, .dl-range-btn, .switch-client-btn) {
+:is(button, select):is(.secondary-button, .dl-range-btn, .switch-client-btn) {
   background: var(--surface);
   color: #243e73;
   border: 1px solid var(--line-strong);
 }
-:is(button.secondary-button, .refresh-data-btn, .dl-range-btn, .switch-client-btn):hover:not(:disabled) {
+:is(button.secondary-button, .dl-range-btn, .switch-client-btn):hover:not(:disabled) {
   background: #ebf1ff;
   border-color: #7693ce;
   color: #183e8d;
@@ -614,3 +614,43 @@ table .sort-head.active { color: #204aac; }
 .login-password-control .login-password-toggle:focus-visible {
   outline-offset: -2px;
 }
+
+button.header-refresh {
+  min-inline-size: 9rem;
+  min-height: 42px;
+  font-weight: 730;
+  transition: transform 160ms ease, background-color 160ms ease;
+}
+
+.header-refresh-icon {
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .header-refresh:hover:not(:disabled) .header-refresh-icon {
+    transform: rotate(24deg);
+  }
+}
+
+.header-refresh:active:not(:disabled) {
+  transform: scale(.97);
+}
+
+button.header-refresh[aria-busy="true"] {
+  opacity: 1;
+  background: #1c42ab;
+  border-color: #1c42ab;
+  color: #fff;
+}
+
+.header-refresh[aria-busy="true"] .header-refresh-icon {
+  animation: spin .8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-refresh:active:not(:disabled) { transform: none; }
+  .header-refresh[aria-busy="true"] .header-refresh-icon { animation: none !important; }
+}
+
+.topbar-user { min-width: 0; }
+.topbar-username { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
