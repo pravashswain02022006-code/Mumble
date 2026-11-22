@@ -1957,33 +1957,45 @@ import mumbleLogo from "./assets/mumble-logo.svg";
       try { await supabase.from("audit_log").insert(Object.assign({ performed_by: "masteradmin" }, entry)); } catch (_) { }
     }
 
-    // Global stats strip for master admin
-    const globalStats = isMaster && h("div", { className: "master-global-stats" },
-      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(CreditCard, { "aria-hidden": true }), "Grand Transactions"), h("strong", { className: "text-green" }, money(globalTxTotal, true))),
-      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(Wallet, { "aria-hidden": true }), "Grand Settlements"), h("strong", { className: "text-orange" }, money(globalStTotal, true))),
-      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(Scale, { "aria-hidden": true }), "Grand Balance"), h("strong", { className: "text-red" }, money(globalBalance, true))),
-      h("div", { className: "mgs-card" }, h("span", { className: "metric-label" }, h(Users, { "aria-hidden": true }), "Clients"), h("strong", null, (data.users || []).length)),
-      h("div", { className: cx("mgs-card mgs-card-commission", commMismatch && "mgs-comm-mismatch-card") },
-        h("div", { className: "mgs-comm-header" },
-          h("span", { className: "metric-label" }, h(ChartColumn, { "aria-hidden": true }), "Total Commission Amount"),
-          h("select", {
-            className: "mgs-comm-filter",
-            value: commCardClient,
-            onChange: e => setCommCardClient(e.target.value),
-            title: "Filter by client"
-          },
-            h("option", { value: "" }, "All Clients"),
-            (data.users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
+    const globalStats = isMaster && h("section", { className: "master-global-stats", "aria-label": "Financial summary" },
+      h("div", { className: "mgs-layout" },
+        h("dl", { className: "mgs-metrics" },
+          [
+            ["Grand Transactions", CreditCard, money(globalTxTotal, true)],
+            ["Grand Settlements", Wallet, money(globalStTotal, true)],
+            ["Grand Balance", Scale, money(globalBalance, true)],
+            ["Clients", Users, (data.users || []).length],
+          ].map(([label, Icon, value]) =>
+            h("div", { className: "mgs-card", key: label },
+              h("dt", { className: "metric-label" }, h(Icon, { "aria-hidden": true }), label),
+              h("dd", { className: "mgs-value" }, value)
+            )
           )
         ),
-        h("strong", { className: "text-purple" }, money(commCardTotalCommission, true)),
-        commMismatch && h("div", { className: "comm-mismatch-alert" },
-          h(CircleAlert, { className: "comm-alert-icon", "aria-hidden": true }),
-          h("div", null,
-            h("strong", null, "Commission mismatch!"),
-            h("span", null, "Expected " + DEFAULT_COMMISSION_LABEL + ": " + money(commExpected, true)),
-            h("span", { className: "comm-alert-diff" },
-              (commCardTotalCommission < commExpected ? "\u2212" : "+") + money(Math.abs(commCardTotalCommission - commExpected), true) + " off"
+        h("div", { className: "mgs-card-commission" },
+          h("div", { className: "mgs-comm-header" },
+            h("h2", { className: "metric-label" }, h(ChartColumn, { "aria-hidden": true }), "Total Commission Amount"),
+            h("select", {
+              className: "mgs-comm-filter",
+              value: commCardClient,
+              onChange: e => setCommCardClient(e.target.value),
+              "aria-label": "Filter commission by client"
+            },
+              h("option", { value: "" }, "All Clients"),
+              (data.users || []).map(u => h("option", { key: u.id, value: u.id }, u.username))
+            )
+          ),
+          h("div", { className: "mgs-value mgs-commission-value" }, money(commCardTotalCommission, true)),
+          commMismatch && h("div", { className: "comm-mismatch-alert" },
+            h(CircleAlert, { className: "comm-alert-icon", "aria-hidden": true }),
+            h("div", { className: "comm-alert-copy" },
+              h("strong", null, "Commission mismatch"),
+              h("dl", { className: "comm-alert-amounts" },
+                h("div", null, h("dt", null, "Expected at " + DEFAULT_COMMISSION_LABEL), h("dd", null, money(commExpected, true))),
+                h("div", null, h("dt", null, "Difference"), h("dd", null,
+                  (commCardTotalCommission < commExpected ? "\u2212" : "+") + money(Math.abs(commCardTotalCommission - commExpected), true)
+                ))
+              )
             )
           )
         )

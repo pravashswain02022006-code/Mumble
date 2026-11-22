@@ -2377,69 +2377,6 @@ tbody tr:hover td {
   margin-top: 4px;
 }
 
-/* ─── Master Admin: Global Stats Strip ──────────────────────────────────────── */
-.master-global-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  margin: 0 0 16px 0;
-  padding: 16px;
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
-  border-radius: 14px;
-}
-.mgs-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px 16px;
-  background: rgba(255,255,255,0.08);
-  border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.12);
-}
-.mgs-card span { font-size: 11px; color: rgba(255,255,255,0.65); font-weight: 600; }
-.mgs-card strong { font-size: 18px; color: #fff; font-weight: 800; }
-
-/* Commission Amount Card */
-.mgs-card-commission {
-  grid-column: span 2;
-  background: rgba(167,139,250,0.15);
-  border-color: rgba(167,139,250,0.35);
-}
-.mgs-comm-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 2px;
-}
-.mgs-comm-filter {
-  height: 26px;
-  min-width: 0;
-  width: auto;
-  max-width: 130px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 0 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(167,139,250,0.5);
-  background: rgba(255,255,255,0.12);
-  color: #fff;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.mgs-comm-filter option { color: #111; background: #fff; }
-.mgs-comm-breakdown {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-top: 4px;
-  font-size: 11px;
-  color: rgba(255,255,255,0.55);
-  font-weight: 500;
-}
-.mgs-comm-breakdown b { color: rgba(255,255,255,0.85); font-weight: 700; }
-.mgs-comm-minus { color: #f87171; font-weight: 800; font-size: 13px; }
 .text-purple { color: #c4b5fd !important; }
 
 /* ─── Client Health Strip ────────────────────────────────────────────────────── */
@@ -2561,61 +2498,6 @@ tbody tr:hover td {
 }
 .edited-row-highlight td:first-child {
   border-left: 4px solid #f59e0b !important;
-}
-
-/* ─── Commission Mismatch — Global Card ─────────────────────────────────────── */
-.mgs-comm-mismatch-card {
-  border: 2px solid #ef4444 !important;
-}
-
-/* Alert box inside the dark stats bar — white text for legibility */
-.comm-mismatch-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 8px 10px;
-  background: rgba(239, 68, 68, 0.18);
-  border: 1px solid rgba(239, 68, 68, 0.5);
-  border-radius: 8px;
-  font-size: 11px;
-  color: #ffffff;
-  line-height: 1.5;
-}
-
-.comm-alert-icon {
-  font-size: 16px;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-
-.comm-mismatch-alert > div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.comm-mismatch-alert strong {
-  font-size: 12px;
-  font-weight: 800;
-  color: #ffffff;
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-.comm-mismatch-alert span {
-  font-size: 11px;
-  color: #ffffff;
-  opacity: 0.9;
-  font-weight: 600;
-}
-
-/* "−₹X off" — gold/amber, stands out clearly against the red bg */
-.comm-alert-diff {
-  font-size: 12px !important;
-  font-weight: 800 !important;
-  color: #fcd34d !important;
-  opacity: 1 !important;
 }
 
 /* ─── Table Totals Header Row ────────────────────────────────────────────────── */
