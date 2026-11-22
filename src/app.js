@@ -2142,7 +2142,7 @@ import mumbleLogo from "./assets/mumble-logo.svg";
           saving && h("span", { className: "saving-indicator" }, "Saving\u2026"),
           h(HeaderRefreshButton, { refreshing: adminRefreshing, onClick: handleAdminRefresh, title: "Refresh all data from server" }),
           h(AppButton, { className: "secondary-button", onClick: () => onLogout() }, "User Portal"),
-          h(AppButton, { className: "primary-button", onClick: onLogout }, "Logout")
+          h(AppButton, { className: "danger-button", onClick: onLogout }, "Logout")
         )
       ),
       dbError && h(ErrorBanner, { message: dbError, onDismiss: onDismissError }),
