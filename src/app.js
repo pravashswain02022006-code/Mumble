@@ -1,7 +1,7 @@
 import * as React from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, CircleAlert, CreditCard, Eye, EyeOff, House, LogOut, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, ChartColumn, ChevronDown, ChevronUp, CircleAlert, CreditCard, Eye, EyeOff, House, LogOut, Scale, Search, Settings2, Users, Wallet, X, Zap } from "lucide-react";
 import { AppButton, HeaderRefreshButton } from "./components/controls";
 import { Input } from "./components/ui/input";
 import { Badge } from "./components/ui/badge";
@@ -484,7 +484,10 @@ import mumbleLogo from "./assets/mumble-logo.svg";
           ),
           !hasRealAuditLog && derivedEntries.length > 0 && h("span", { style: { fontSize: "11px", color: "#6b7280", marginLeft: "8px", fontStyle: "italic" } }, "(live from records)")
         ),
-        h(AppButton, { className: "secondary-button", onClick: () => setOpen(o => !o) }, open ? "⌃ Collapse" : "⌄ Expand")
+        h(AppButton, { className: "secondary-button", onClick: () => setOpen(o => !o), "aria-expanded": open },
+          h(open ? ChevronUp : ChevronDown, { "aria-hidden": true }),
+          h("span", null, open ? "Collapse" : "Expand")
+        )
       ),
       open && h("div", null,
         h("div", { className: "feed-filters" },
